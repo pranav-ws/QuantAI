@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>QuantAI Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0e1a;--panel:#111827;--border:#1e2d3d;--accent:#00d4aa;
+    --accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b;--text:#e2e8f0;
+    --muted:#64748b;--green:#10b981;--red:#ef4444;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;}
+
+  /* ── Login overlay ── */
+  #login-overlay{
+    position:fixed;inset:0;background:rgba(10,14,26,0.97);
+    display:flex;align-items:center;justify-content:center;z-index:1000;
+  }
+  #login-overlay.hidden{display:none;}
+  .login-box{
+    background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    padding:40px;width:380px;text-align:center;
+  }
+  .login-box h2{font-size:22px;color:var(--accent);margin-bottom:4px;}
+  .login-box p{color:var(--muted);margin-bottom:28px;font-size:13px;}
+  .tab-btns{display:flex;background:#0a0e1a;border-radius:8px;padding:4px;margin-bottom:24px;}
+  .tab-btn{
+    flex:1;padding:8px;border:none;background:none;color:var(--muted);
+    cursor:pointer;border-radius:6px;font-size:13px;font-weight:600;transition:.2s;
+  }
+  .tab-btn.active{background:var(--accent);color:#000;}
+  .form-group{margin-bottom:14px;text-align:left;}
+  .form-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .form-group input{
+    width:100%;padding:10px 14px;background:#0a0e1a;border:1px solid var(--border);
+    border-radius:8px;color:var(--text);font-size:14px;outline:none;transition:.2s;
+  }
+  .form-group input:focus{border-color:var(--accent);}
+  .btn-primary{
+    width:100%;padding:12px;background:var(--accent);color:#000;border:none;
+    border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:.2s;margin-top:8px;
+  }
+  .btn-primary:hover{opacity:.9;}
+  .login-err{color:var(--danger);font-size:12px;margin-top:8px;min-height:18px;}
+  .guest-btn{
+    margin-top:16px;background:none;border:1px solid var(--border);color:var(--muted);
+    width:100%;padding:10px;border-radius:8px;cursor:pointer;font-size:13px;transition:.2s;
+  }
+  .guest-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* ── Top bar ── */
+  header{
+    background:var(--panel);border-bottom:1px solid var(--border);
+    padding:0 20px;height:56px;display:flex;align-items:center;gap:16px;
+    position:sticky;top:0;z-index:100;
+  }
+  .logo{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:-0.5px;}
+  .logo span{color:var(--text);}
+  .ticker-tape{
+    flex:1;overflow:hidden;height:32px;display:flex;align-items:center;
+    background:#0a0e1a;border-radius:20px;padding:0 16px;
+  }
+  .tape-inner{
+    display:flex;gap:28px;white-space:nowrap;animation:scroll-tape 40s linear infinite;
+    font-size:12px;font-weight:600;
+  }
+  @keyframes scroll-tape{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .tape-item{display:inline-flex;gap:6px;align-items:center;}
+  .tape-item .up{color:var(--green);}
+  .tape-item .dn{color:var(--red);}
+  .user-area{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .user-badge{
+    background:#1e2d3d;border-radius:20px;padding:6px 14px;
+    font-size:12px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px;
+  }
+  .btn-sm{
+    padding:6px 14px;border:1px solid var(--border);background:none;color:var(--muted);
+    border-radius:6px;cursor:pointer;font-size:12px;transition:.2s;
+  }
+  .btn-sm:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* ── Layout ── */
+  .app{display:flex;height:calc(100vh - 56px);}
+  .sidebar{
+    width:220px;background:var(--panel);border-right:1px solid var(--border);
+    padding:16px 0;flex-shrink:0;display:flex;flex-direction:column;
+  }
+  .nav-section{padding:0 12px;margin-bottom:8px;font-size:10px;font-weight:700;
+    color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+  .nav-link{
+    display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;
+    color:var(--muted);border-left:3px solid transparent;transition:.15s;font-size:13px;
+  }
+  .nav-link:hover{color:var(--text);background:rgba(255,255,255,0.04);}
+  .nav-link.active{color:var(--accent);border-left-color:var(--accent);background:rgba(0,212,170,0.06);}
+  .nav-link .icon{font-size:16px;width:20px;text-align:center;}
+  .sidebar-footer{margin-top:auto;padding:12px;border-top:1px solid var(--border);}
+  .scheduler-status{
+    background:#0a0e1a;border-radius:8px;padding:10px;font-size:11px;
+  }
+  .sch-dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+    display:inline-block;margin-right:6px;animation:blink 2s infinite;}
+  @keyframes blink{50%{opacity:.3}}
+
+  /* ── Main ── */
+  main{flex:1;overflow-y:auto;padding:20px;}
+  .page{display:none;}
+  .page.active{display:block;}
+
+  /* ── Stat cards ── */
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;}
+  .stat-card{
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:16px;position:relative;overflow:hidden;
+  }
+  .stat-card::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+  }
+  .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+  .stat-value{font-size:24px;font-weight:800;color:var(--text);}
+  .stat-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+
+  /* ── Panels ── */
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;}
+  .panel-header{
+    padding:14px 18px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .panel-title{font-size:14px;font-weight:700;color:var(--text);}
+  .panel-body{padding:16px;}
+
+  /* ── Buy cards ── */
+  .buy-cards{display:flex;flex-wrap:wrap;gap:12px;}
+  .buy-card{
+    background:#0a0e1a;border:1px solid var(--green);border-radius:10px;
+    padding:14px 16px;min-width:200px;flex:0 0 auto;position:relative;
+  }
+  .buy-card .ticker{font-size:16px;font-weight:800;color:var(--green);}
+  .buy-card .name{font-size:11px;color:var(--muted);margin-bottom:8px;}
+  .buy-card .price{font-size:20px;font-weight:700;color:var(--text);}
+  .buy-card .conf{font-size:12px;color:var(--accent);margin-top:4px;}
+  .buy-card .model-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+  .model-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;}
+  .badge-rf{background:rgba(59,130,246,.2);color:#93c5fd;}
+  .badge-xgb{background:rgba(245,158,11,.2);color:#fcd34d;}
+  .badge-seq{background:rgba(139,92,246,.2);color:#c4b5fd;}
+  .badge-rl{background:rgba(0,212,170,.15);color:var(--accent);}
+  .agree-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;}
+  .agree-strong{background:rgba(16,185,129,.2);color:var(--green);}
+  .agree-weak{background:rgba(245,158,11,.2);color:var(--warn);}
+  .wl-btn{
+    position:absolute;top:10px;right:10px;background:none;border:none;
+    cursor:pointer;font-size:18px;color:var(--muted);transition:.2s;
+  }
+  .wl-btn:hover{color:var(--warn);}
+  .wl-btn.saved{color:var(--warn);}
+
+  /* ── Signals table ── */
+  .filters{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .filter-input{
+    padding:8px 12px;background:#0a0e1a;border:1px solid var(--border);
+    border-radius:8px;color:var(--text);font-size:13px;outline:none;
+  }
+  .filter-input:focus{border-color:var(--accent);}
+  table{width:100%;border-collapse:collapse;}
+  th{padding:10px 12px;text-align:left;font-size:11px;font-weight:700;
+    color:var(--muted);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px;}
+  td{padding:10px 12px;border-bottom:1px solid rgba(30,45,61,.5);font-size:13px;}
+  tr:hover td{background:rgba(255,255,255,0.02);}
+  .signal-buy{color:var(--green);font-weight:700;}
+  .signal-skip{color:var(--muted);}
+  .conf-bar-wrap{display:flex;align-items:center;gap:8px;}
+  .conf-bar{height:6px;border-radius:3px;background:#1e2d3d;flex:1;max-width:80px;}
+  .conf-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent2),var(--accent));}
+
+  /* ── Watchlist ── */
+  .wl-empty{text-align:center;padding:40px;color:var(--muted);}
+  .wl-empty .icon{font-size:32px;margin-bottom:8px;}
+
+  /* ── Portfolio ── */
+  .pnl-pos{color:var(--green);}
+  .pnl-neg{color:var(--red);}
+
+  /* ── Scheduler log ── */
+  .log-list{max-height:300px;overflow-y:auto;}
+  .log-row{
+    display:flex;align-items:center;gap:12px;padding:8px 0;
+    border-bottom:1px solid rgba(30,45,61,.5);font-size:12px;
+  }
+  .log-job{font-weight:600;color:var(--text);min-width:140px;}
+  .log-status{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;}
+  .st-success{background:rgba(16,185,129,.2);color:var(--green);}
+  .st-error{background:rgba(239,68,68,.2);color:var(--red);}
+  .st-running{background:rgba(59,130,246,.2);color:var(--accent2);}
+  .log-time{color:var(--muted);margin-left:auto;}
+
+  /* ── Admin ── */
+  .user-row{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
+  .user-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:flex;align-items:center;justify-content:center;font-weight:800;color:#000;margin-right:12px;}
+  .user-info .name{font-weight:600;}
+  .user-info .email{font-size:12px;color:var(--muted);}
+  .admin-badge{background:rgba(245,158,11,.2);color:var(--warn);font-size:11px;padding:2px 8px;border-radius:10px;margin-left:auto;}
+  .user-badge-normal{background:rgba(0,212,170,.1);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:10px;margin-left:auto;}
+
+  /* ── Loading spinner ── */
+  .spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);
+    border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loading{display:flex;align-items:center;justify-content:center;padding:40px;gap:12px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN OVERLAY ══════════════════════════════════════════════ -->
+<div id="login-overlay">
+  <div class="login-box">
+    <h2>🤖 QuantAI</h2>
+    <p>AI-powered Nifty 50 trading signals</p>
+    <div class="tab-btns">
+      <button class="tab-btn active" onclick="switchTab('login')">Sign In</button>
+      <button class="tab-btn" onclick="switchTab('register')">Register</button>
+    </div>
+    <!-- Login form -->
+    <div id="login-form">
+      <div class="form-group">
+        <label>Username or Email</label>
+        <input type="text" id="l-user" placeholder="your_username" autocomplete="username"/>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')doLogin()"/>
+      </div>
+      <button class="btn-primary" onclick="doLogin()">Sign In</button>
+    </div>
+    <!-- Register form -->
+    <div id="register-form" style="display:none">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="r-user" placeholder="your_username"/>
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="r-email" placeholder="you@example.com"/>
+      </div>
+      <div class="form-group">
+        <label>Password (min 6 chars)</label>
+        <input type="password" id="r-pass" placeholder="••••••••"
+               onkeydown="if(event.key==='Enter')doRegister()"/>
+      </div>
+      <button class="btn-primary" onclick="doRegister()">Create Account</button>
+    </div>
+    <div class="login-err" id="login-err"></div>
+    <button class="guest-btn" onclick="guestMode()">Continue as Guest (view only)</button>
+  </div>
+</div>
+
+<!-- ══ HEADER ════════════════════════════════════════════════════ -->
+<header>
+  <div class="logo">Quant<span>AI</span></div>
+  <div class="ticker-tape"><div class="tape-inner" id="tape">Loading market data…</div></div>
+  <div class="user-area">
+    <div id="user-badge-el" class="user-badge" style="display:none">
+      <span>👤</span><span id="username-display"></span>
+    </div>
+    <button class="btn-sm" id="logout-btn" onclick="doLogout()" style="display:none">Logout</button>
+    <button class="btn-sm" onclick="refreshAll()">⟳ Refresh</button>
+  </div>
+</header>
+
+<!-- ══ APP SHELL ═════════════════════════════════════════════════ -->
+<div class="app">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-section">Main</div>
+    <div class="nav-link active" onclick="nav('signals')">
+      <span class="icon">📊</span>Signals
+    </div>
+    <div class="nav-link" onclick="nav('watchlist')">
+      <span class="icon">⭐</span>My Watchlist
+    </div>
+    <div class="nav-link" onclick="nav('portfolio')">
+      <span class="icon">💼</span>My Portfolio
+    </div>
+
+    <div class="nav-section" style="margin-top:12px">System</div>
+    <div class="nav-link" onclick="nav('scheduler')">
+      <span class="icon">⏰</span>Scheduler
+    </div>
+    <div class="nav-link" id="nav-admin" onclick="nav('admin')" style="display:none">
+      <span class="icon">🔑</span>Admin
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="scheduler-status" id="sch-sidebar">
+        <span class="sch-dot"></span>
+        <strong style="font-size:12px">Scheduler</strong>
+        <div style="color:var(--muted);font-size:11px;margin-top:4px" id="sch-last">Loading…</div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main area -->
+  <main>
+
+    <!-- ── SIGNALS PAGE ── -->
+    <div class="page active" id="page-signals">
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card"><div class="stat-label">Total Stocks</div><div class="stat-value" id="s-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">BUY Signals</div><div class="stat-value" style="color:var(--green)" id="s-buy">—</div></div>
+        <div class="stat-card"><div class="stat-label">Last Scan</div><div class="stat-value" style="font-size:16px" id="s-time">—</div></div>
+        <div class="stat-card"><div class="stat-label">Active Sectors</div><div class="stat-value" id="s-sectors">—</div></div>
+      </div>
+
+      <!-- Buy cards -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🟢 BUY Signals Today</div>
+          <span id="buy-count" style="color:var(--muted);font-size:12px"></span>
+        </div>
+        <div class="panel-body">
+          <div class="buy-cards" id="buy-cards"><div class="loading"><div class="spinner"></div>Scanning 50 stocks…</div></div>
+        </div>
+      </div>
+
+      <!-- Full table -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">All Signals</div>
+          <span id="row-count" style="color:var(--muted);font-size:12px"></span>
+        </div>
+        <div class="panel-body">
+          <div class="filters">
+            <input class="filter-input" id="search" placeholder="🔍 Search ticker or name…" oninput="filterTable()"/>
+            <select class="filter-input" id="sector-filter" onchange="filterTable()">
+              <option value="">All Sectors</option>
+            </select>
+            <select class="filter-input" id="signal-filter" onchange="filterTable()">
+              <option value="">All Signals</option>
+              <option value="BUY">BUY only</option>
+              <option value="SKIP">SKIP only</option>
+            </select>
+          </div>
+          <div style="overflow-x:auto">
+            <table id="signals-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th><th>Name</th><th>Sector</th>
+                  <th>Price</th><th>Signal</th><th>Confidence</th>
+                  <th>RSI</th><th>Model</th><th>Watchlist</th>
+                </tr>
+              </thead>
+              <tbody id="signals-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── WATCHLIST PAGE ── -->
+    <div class="page" id="page-watchlist">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">⭐ My Watchlist</div>
+          <span id="wl-count" style="color:var(--muted);font-size:12px"></span>
+        </div>
+        <div class="panel-body" id="wl-body">
+          <div class="wl-empty">
+            <div class="icon">⭐</div>
+            Sign in and click ⭐ on any signal to add stocks to your watchlist.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PORTFOLIO PAGE ── -->
+    <div class="page" id="page-portfolio">
+      <div class="stat-grid" id="port-stats"></div>
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">💼 My Trades</div></div>
+        <div class="panel-body" id="port-body">
+          <div class="loading"><div class="spinner"></div>Loading portfolio…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCHEDULER PAGE ── -->
+    <div class="page" id="page-scheduler">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">⏰ Daily Automation Log</div>
+          <button class="btn-sm" onclick="loadScheduler()">⟳ Refresh</button>
+        </div>
+        <div class="panel-body">
+          <p style="color:var(--muted);font-size:12px;margin-bottom:14px">
+            Run <code style="background:#0a0e1a;padding:2px 6px;border-radius:4px">python scheduler.py</code>
+            to start daily automation. Jobs appear here as they run.
+          </p>
+          <div class="log-list" id="sch-log"><div class="loading"><div class="spinner"></div>Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ADMIN PAGE ── -->
+    <div class="page" id="page-admin">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🔑 Admin — Registered Users</div>
+          <span id="admin-count" style="color:var(--muted);font-size:12px"></span>
+        </div>
+        <div class="panel-body" id="admin-body">
+          <div class="loading"><div class="spinner"></div>Loading…</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+const API = "http://127.0.0.1:8000";
+let TOKEN   = sessionStorage.getItem("q_token") || "";
+let USER    = JSON.parse(sessionStorage.getItem("q_user") || "null");
+let SIGNALS = [];
+let WATCHLIST_TICKERS = new Set();
+let IS_GUEST = false;
+
+// ══ AUTH ══════════════════════════════════════════════════
+function switchTab(tab){
+  document.querySelectorAll(".tab-btn").forEach((b,i)=>{
+    b.classList.toggle("active", (tab==="login"&&i===0)||(tab==="register"&&i===1));
+  });
+  document.getElementById("login-form").style.display = tab==="login"?"block":"none";
+  document.getElementById("register-form").style.display = tab==="register"?"block":"none";
+  document.getElementById("login-err").textContent = "";
+}
+
+async function doLogin(){
+  const u=document.getElementById("l-user").value.trim();
+  const p=document.getElementById("l-pass").value;
+  if(!u||!p){setErr("Please fill in both fields.");return;}
+  const res=await fetch(`${API}/auth/login`,{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({username:u,password:p})
+  });
+  const data=await res.json();
+  if(!res.ok){setErr(data.detail||"Login failed.");return;}
+  setSession(data.token, data.user);
+}
+
+async function doRegister(){
+  const u=document.getElementById("r-user").value.trim();
+  const e=document.getElementById("r-email").value.trim();
+  const p=document.getElementById("r-pass").value;
+  if(!u||!e||!p){setErr("Please fill all fields.");return;}
+  const res=await fetch(`${API}/auth/register`,{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({username:u,email:e,password:p})
+  });
+  const data=await res.json();
+  if(!res.ok){setErr(data.detail||"Registration failed.");return;}
+  // Auto-login after register
+  document.getElementById("l-user").value=u;
+  document.getElementById("l-pass").value=p;
+  switchTab("login");
+  doLogin();
+}
+
+function setErr(msg){document.getElementById("login-err").textContent=msg;}
+
+function setSession(token, user){
+  TOKEN = token; USER = user;
+  sessionStorage.setItem("q_token", token);
+  sessionStorage.setItem("q_user", JSON.stringify(user));
+  IS_GUEST = false;
+  document.getElementById("login-overlay").classList.add("hidden");
+  document.getElementById("username-display").textContent = user.username;
+  document.getElementById("user-badge-el").style.display = "flex";
+  document.getElementById("logout-btn").style.display = "block";
+  if(user.is_admin) document.getElementById("nav-admin").style.display="flex";
+  loadWatchlist();
+  refreshAll();
+}
+
+function guestMode(){
+  IS_GUEST = true; TOKEN = ""; USER = null;
+  document.getElementById("login-overlay").classList.add("hidden");
+  document.getElementById("user-badge-el").textContent = "Guest";
+  document.getElementById("user-badge-el").style.display = "flex";
+  refreshAll();
+}
+
+async function doLogout(){
+  if(TOKEN) await fetch(`${API}/auth/logout`,{method:"POST",headers:{Authorization:`Bearer ${TOKEN}`}});
+  TOKEN=""; USER=null;
+  sessionStorage.removeItem("q_token");
+  sessionStorage.removeItem("q_user");
+  document.getElementById("user-badge-el").style.display="none";
+  document.getElementById("logout-btn").style.display="none";
+  document.getElementById("login-overlay").classList.remove("hidden");
+}
+
+// ══ NAVIGATION ════════════════════════════════════════════
+function nav(page){
+  document.querySelectorAll(".nav-link").forEach(l=>l.classList.remove("active"));
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  const el = document.querySelector(`[onclick="nav('${page}')"]`);
+  if(el) el.classList.add("active");
+  const pg = document.getElementById(`page-${page}`);
+  if(pg) pg.classList.add("active");
+  if(page==="watchlist")    loadWatchlist();
+  if(page==="portfolio")    loadPortfolio();
+  if(page==="scheduler")    loadScheduler();
+  if(page==="admin")        loadAdmin();
+}
+
+// ══ AUTH HEADER ───────────────────────────────────────────
+function authHeader(){
+  return TOKEN ? {Authorization:`Bearer ${TOKEN}`} : {};
+}
+
+// ══ SIGNALS ═══════════════════════════════════════════════
+async function loadSignals(){
+  const res  = await fetch(`${API}/signals`,{headers:authHeader()});
+  const data = await res.json();
+  SIGNALS    = data.results||[];
+
+  document.getElementById("s-total").textContent = data.total_stocks||0;
+  document.getElementById("s-buy").textContent   = data.buy_signals||0;
+  const t = new Date(data.scan_time);
+  document.getElementById("s-time").textContent  = t.toLocaleTimeString("en-IN",{hour12:true,hour:"2-digit",minute:"2-digit"});
+
+  const sectors = [...new Set(SIGNALS.map(s=>s.sector).filter(Boolean))];
+  document.getElementById("s-sectors").textContent = sectors.length;
+
+  // Sector filter dropdown
+  const sf = document.getElementById("sector-filter");
+  sf.innerHTML = '<option value="">All Sectors</option>';
+  sectors.sort().forEach(s=>{
+    sf.innerHTML += `<option value="${s}">${s}</option>`;
+  });
+
+  // Ticker tape
+  const items = SIGNALS.slice(0,20).map(s=>{
+    const pnl = (Math.random()*4-1).toFixed(2);
+    const cls = pnl>=0?"up":"dn";
+    return `<span class="tape-item"><strong>${s.ticker.replace(".NS","")}</strong>
+      <span>₹${s.price?.toLocaleString("en-IN")}</span>
+      <span class="${cls}">${pnl>=0?"+":""}${pnl}%</span></span>`;
+  });
+  const html = items.join("") + items.join("");
+  document.getElementById("tape").innerHTML = html;
+
+  // Buy cards
+  const buys = SIGNALS.filter(s=>s.signal==="BUY");
+  document.getElementById("buy-count").textContent = `${buys.length} signal${buys.length!==1?"s":""}`;
+  const cards = document.getElementById("buy-cards");
+  if(buys.length===0){
+    cards.innerHTML = '<p style="color:var(--muted);padding:8px">No BUY signals today — staying in cash is correct ✓</p>';
+  } else {
+    cards.innerHTML = buys.map(s=>buyCard(s)).join("");
+  }
+
+  renderTable(SIGNALS);
+}
+
+function buyCard(s){
+  const saved = WATCHLIST_TICKERS.has(s.ticker);
+  const agCls = s.agreement==="strong"?"agree-strong":"agree-weak";
+  const ind   = s.individual||{};
+  const pct   = (v=>v!=null?`${(v*100).toFixed(0)}%`:"—");
+  return `<div class="buy-card">
+    <button class="wl-btn ${saved?"saved":""}" onclick="toggleWL('${s.ticker}',this)" title="${saved?"Remove from":"Add to"} watchlist">⭐</button>
+    <div class="ticker">${s.ticker.replace(".NS","")}</div>
+    <div class="name">${(s.name||"").substring(0,22)}</div>
+    <div class="price">₹${(s.price||0).toLocaleString("en-IN")}</div>
+    <div class="conf">Confidence: ${((s.confidence||0)*100).toFixed(1)}%</div>
+    <div class="model-row">
+      ${ind.RF!=null?`<span class="model-badge badge-rf">RF ${pct(ind.RF)}</span>`:""}
+      ${ind.XGBoost!=null?`<span class="model-badge badge-xgb">XGB ${pct(ind.XGBoost)}</span>`:""}
+      ${ind.SeqNN!=null?`<span class="model-badge badge-seq">SeqNN ${pct(ind.SeqNN)}</span>`:""}
+      <span class="agree-badge ${agCls}">${s.agreement||"ensemble"}</span>
+    </div>
+  </div>`;
+}
+
+function renderTable(data){
+  const tbody = document.getElementById("signals-tbody");
+  tbody.innerHTML = data.map(s=>{
+    const isBuy = s.signal==="BUY";
+    const wSaved = WATCHLIST_TICKERS.has(s.ticker);
+    const confPct= Math.round((s.confidence||0)*100);
+    return `<tr>
+      <td><strong>${s.ticker.replace(".NS","")}</strong></td>
+      <td style="color:var(--muted)">${(s.name||"").substring(0,20)}</td>
+      <td style="color:var(--muted);font-size:12px">${s.sector||""}</td>
+      <td>₹${(s.price||0).toLocaleString("en-IN")}</td>
+      <td class="${isBuy?"signal-buy":"signal-skip"}">${isBuy?"🟢 BUY":"⚪ SKIP"}</td>
+      <td><div class="conf-bar-wrap">
+        <span>${confPct}%</span>
+        <div class="conf-bar"><div class="conf-fill" style="width:${confPct}%"></div></div>
+      </div></td>
+      <td style="color:${(s.rsi||50)>70?"var(--red)":(s.rsi||50)<30?"var(--green)":"var(--text)"}">${(s.rsi||0).toFixed(1)}</td>
+      <td style="color:var(--muted);font-size:12px">${s.model_type||""}</td>
+      <td><button onclick="toggleWL('${s.ticker}',this)" class="btn-sm wl-btn-sm ${wSaved?"wl-saved":""}"
+          style="padding:4px 10px">${wSaved?"★":"☆"}</button></td>
+    </tr>`;
+  }).join("");
+  document.getElementById("row-count").textContent = `${data.length} stocks`;
+}
+
+function filterTable(){
+  const q   = document.getElementById("search").value.toLowerCase();
+  const sec = document.getElementById("sector-filter").value;
+  const sig = document.getElementById("signal-filter").value;
+  const filtered = SIGNALS.filter(s=>{
+    const matchQ   = !q || s.ticker.toLowerCase().includes(q) || (s.name||"").toLowerCase().includes(q);
+    const matchSec = !sec || s.sector===sec;
+    const matchSig = !sig || s.signal===sig;
+    return matchQ && matchSec && matchSig;
+  });
+  renderTable(filtered);
+}
+
+// ══ WATCHLIST ════════════════════════════════════════════
+async function loadWatchlist(){
+  if(!TOKEN){
+    document.getElementById("wl-body").innerHTML=`
+      <div class="wl-empty"><div class="icon">🔒</div>Sign in to use your personal watchlist.</div>`;
+    document.getElementById("wl-count").textContent="";
+    return;
+  }
+  const res  = await fetch(`${API}/watchlist`,{headers:authHeader()});
+  const data = await res.json();
+  const items= data.watchlist||[];
+  WATCHLIST_TICKERS = new Set(items.map(i=>i.ticker));
+  document.getElementById("wl-count").textContent = `${items.length} stock${items.length!==1?"s":""}`;
+  if(items.length===0){
+    document.getElementById("wl-body").innerHTML=`
+      <div class="wl-empty"><div class="icon">⭐</div>
+      Click ⭐ on any signal card to add stocks to your watchlist.</div>`;
+    return;
+  }
+  const html = `<table><thead><tr><th>Ticker</th><th>Name</th><th>Price</th>
+    <th>Signal</th><th>Confidence</th><th>Added</th><th></th></tr></thead>
+    <tbody>${items.map(s=>`<tr>
+      <td><strong>${s.ticker.replace(".NS","")}</strong></td>
+      <td style="color:var(--muted)">${(s.name||"").substring(0,22)}</td>
+      <td>${s.price?`₹${s.price.toLocaleString("en-IN")}`:"—"}</td>
+      <td class="${s.signal==="BUY"?"signal-buy":"signal-skip"}">${s.signal==="BUY"?"🟢 BUY":"⚪ SKIP"}</td>
+      <td>${s.confidence?((s.confidence*100).toFixed(1)+"%"):"—"}</td>
+      <td style="color:var(--muted);font-size:12px">${s.added_at?.slice(0,10)||""}</td>
+      <td><button class="btn-sm" onclick="removeWL('${s.ticker}')"
+          style="color:var(--red);border-color:var(--red)">Remove</button></td>
+    </tr>`).join("")}</tbody></table>`;
+  document.getElementById("wl-body").innerHTML = html;
+}
+
+async function toggleWL(ticker, btn){
+  if(!TOKEN){alert("Please sign in to use your watchlist.");return;}
+  const saved = WATCHLIST_TICKERS.has(ticker);
+  if(saved){
+    await fetch(`${API}/watchlist/${ticker}`,{method:"DELETE",headers:authHeader()});
+    WATCHLIST_TICKERS.delete(ticker);
+  } else {
+    await fetch(`${API}/watchlist/${ticker}`,{method:"POST",headers:authHeader()});
+    WATCHLIST_TICKERS.add(ticker);
+  }
+  btn.classList.toggle("saved", !saved);
+  btn.textContent = saved?"⭐":"★";
+}
+
+async function removeWL(ticker){
+  if(!TOKEN)return;
+  await fetch(`${API}/watchlist/${ticker}`,{method:"DELETE",headers:authHeader()});
+  WATCHLIST_TICKERS.delete(ticker);
+  loadWatchlist();
+}
+
+// ══ PORTFOLIO ════════════════════════════════════════════
+async function loadPortfolio(){
+  if(!TOKEN){
+    document.getElementById("port-body").innerHTML=`
+      <div class="wl-empty"><div class="icon">🔒</div>Sign in to view your personal portfolio.</div>`;
+    return;
+  }
+  const res  = await fetch(`${API}/user/portfolio`,{headers:authHeader()});
+  const data = await res.json();
+  const pnlC = data.total_pnl>=0?"pnl-pos":"pnl-neg";
+  document.getElementById("port-stats").innerHTML=`
+    <div class="stat-card"><div class="stat-label">Open Trades</div><div class="stat-value">${data.open_count}</div></div>
+    <div class="stat-card"><div class="stat-label">Closed Trades</div><div class="stat-value">${data.closed_count}</div></div>
+    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value">${data.win_rate}%</div></div>
+    <div class="stat-card"><div class="stat-label">Total P&L</div>
+      <div class="stat-value ${pnlC}">₹${(data.total_pnl||0).toLocaleString("en-IN",{minimumFractionDigits:0})}</div></div>`;
+  if(!data.trades||data.trades.length===0){
+    document.getElementById("port-body").innerHTML=`
+      <div class="wl-empty"><div class="icon">💼</div>
+      No trades yet. Signals will be tracked automatically when you paper trade.</div>`;
+    return;
+  }
+  const html = `<table><thead><tr><th>Ticker</th><th>Shares</th><th>Buy Price</th>
+    <th>Stop Loss</th><th>Date</th><th>Confidence</th><th>Status</th><th>P&L</th></tr></thead>
+    <tbody>${data.trades.map(t=>{
+      const pnlC2 = (t.pnl||0)>=0?"pnl-pos":"pnl-neg";
+      return `<tr>
+        <td><strong>${(t.ticker||"").replace(".NS","")}</strong></td>
+        <td>${t.shares}</td>
+        <td>₹${(t.buy_price||0).toLocaleString("en-IN")}</td>
+        <td>₹${(t.stop_loss||0).toLocaleString("en-IN")}</td>
+        <td style="color:var(--muted);font-size:12px">${t.signal_date||""}</td>
+        <td>${t.confidence?((t.confidence*100).toFixed(1)+"%"):"—"}</td>
+        <td><span class="model-badge ${t.status==="OPEN"?"badge-xgb":"badge-rf"}">${t.status}</span></td>
+        <td class="${pnlC2}">${t.pnl!=null?"₹"+t.pnl.toLocaleString("en-IN"):"—"}</td>
+      </tr>`;
+    }).join("")}</tbody></table>`;
+  document.getElementById("port-body").innerHTML = html;
+}
+
+// ══ SCHEDULER LOG ════════════════════════════════════════
+async function loadScheduler(){
+  const res  = await fetch(`${API}/scheduler/status`);
+  const data = await res.json();
+  const logs = data.logs||[];
+  const el   = document.getElementById("sch-log");
+  if(logs.length===0){
+    el.innerHTML=`<div class="wl-empty" style="padding:20px">
+      <div class="icon">⏰</div>No jobs have run yet.<br>
+      Run <code style="background:#0a0e1a;padding:2px 6px;border-radius:4px">python scheduler.py</code> to start.</div>`;
+    return;
+  }
+  el.innerHTML = logs.map(l=>{
+    const sc = l.status==="SUCCESS"?"st-success":l.status==="ERROR"?"st-error":"st-running";
+    return `<div class="log-row">
+      <span class="log-job">${l.job}</span>
+      <span class="log-status ${sc}">${l.status}</span>
+      <span style="color:var(--muted);font-size:12px">${l.message||""}</span>
+      <span class="log-time">${l.ran_at?.slice(0,16)||""}</span>
+    </div>`;
+  }).join("");
+  // Update sidebar
+  if(logs.length>0){
+    document.getElementById("sch-last").textContent = `Last: ${logs[0].job} — ${logs[0].status}`;
+  }
+}
+
+// ══ ADMIN ═════════════════════════════════════════════════
+async function loadAdmin(){
+  if(!USER?.is_admin){
+    document.getElementById("admin-body").innerHTML=`
+      <div class="wl-empty"><div class="icon">🔒</div>Admin access required.</div>`;
+    return;
+  }
+  const res  = await fetch(`${API}/admin/users`,{headers:authHeader()});
+  const data = await res.json();
+  const users= data.users||[];
+  document.getElementById("admin-count").textContent = `${users.length} user${users.length!==1?"s":""}`;
+  document.getElementById("admin-body").innerHTML = users.map(u=>`
+    <div class="user-row">
+      <div class="user-avatar">${u.username[0].toUpperCase()}</div>
+      <div class="user-info">
+        <div class="name">${u.username}</div>
+        <div class="email">${u.email}</div>
+      </div>
+      <span class="${u.is_admin?"admin-badge":"user-badge-normal"}">${u.is_admin?"Admin":"User"}</span>
+    </div>`).join("");
+}
+
+// ══ INIT ══════════════════════════════════════════════════
+async function refreshAll(){
+  await loadSignals();
+  loadScheduler();
+}
+
+// Auto-resume session
+window.onload=function(){
+  if(TOKEN && USER){
+    setSession(TOKEN, USER);
+  } else {
+    // Don't auto-open login; overlay is visible by default
+  }
+};
+</script>
+</body>
+</html>

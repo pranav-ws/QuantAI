@@ -1,0 +1,16 @@
+yfinance
+pandas
+matplotlib
+mplfinance
+ta
+scikit-learn
+joblib
+backtesting
+fastapi
+uvicorn
+python-multipart
+python-telegram-bot
+xgboost
+tensorflow
+vaderSentiment
+schedule

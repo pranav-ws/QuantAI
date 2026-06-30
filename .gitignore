@@ -1,0 +1,33 @@
+venv/
+__pycache__/
+*.pyc
+
+# Local data & trained models (regenerate via pipeline.py / train_all_models.py)
+data/*.db
+data/*.json
+data/*.txt
+models/*.pkl
+models/*.png
+
+# Logs
+*.log
+# Environments
+venv/
+env/
+.conda/
+.venv/
+
+# Caches and compiled files
+__pycache__/
+*.pyc
+*.whl
+
+# OS generated files
+.DS_Store
+data/
+*.csv
+*.json
+*.parquet
+
+tf_env/
+models/
