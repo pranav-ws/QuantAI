@@ -16,6 +16,7 @@ venv/
 env/
 .conda/
 .venv/
+.env
 
 # Caches and compiled files
 __pycache__/
@@ -33,3 +34,4 @@ tf_env/
 models/
 
 .env.example
+.env
