@@ -31,3 +31,5 @@ data/
 
 tf_env/
 models/
+
+.env.example
