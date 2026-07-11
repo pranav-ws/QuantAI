@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Sign in — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+<style>
+  .login-btn-wrap{ display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+  .api-status-row{ display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted); margin-top:14px; }
+  .api-dot{ width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+  .api-dot.online{ background:var(--green); box-shadow:0 0 6px var(--green); animation:pulse 1.6s infinite; }
+  .api-dot.offline{ background:var(--red); }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.3} }
+  .login-box .btn-block{ font-size:14px; padding:11px; }
+  .divider{ display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; margin:8px 0; }
+  .divider::before,.divider::after{ content:""; flex:1; height:1px; background:var(--border); }
+</style>
+</head>
+<body>
+
+<button class="icon-btn login-topbar" id="btn-theme" type="button" title="Toggle theme"></button>
+
+<div class="login-wrap">
+  <div class="login-box">
+    <div class="brand" style="justify-content:center;margin-bottom:18px">
+      <span class="mark">Q</span><span class="word" style="font-size:19px">Quant<em>AI</em></span>
+    </div>
+    <h1>Welcome back</h1>
+    <div class="sub">AI ensemble signals for the Nifty 50</div>
+
+    <div class="tabs" style="margin:0 auto 20px;">
+      <button class="tab active" id="tab-login"    onclick="switchTab('login')">Sign in</button>
+      <button class="tab"        id="tab-register" onclick="switchTab('register')">Register</button>
+    </div>
+
+    <!-- Sign in form -->
+    <div id="form-login">
+      <div class="form-row">
+        <label class="flabel">Username</label>
+        <input class="field" id="l-user" style="width:100%" placeholder="your_username" autocomplete="username"/>
+      </div>
+      <div class="form-row">
+        <label class="flabel">Password</label>
+        <input class="field" id="l-pass" style="width:100%" type="password" placeholder="••••••••"
+               autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
+      </div>
+      <div class="login-btn-wrap">
+        <button class="btn btn-primary btn-lg btn-block" id="btn-login" onclick="doLogin()">Sign in</button>
+        <div class="divider">or</div>
+        <button class="btn btn-block" onclick="guestMode()">Continue as guest (read-only)</button>
+      </div>
+    </div>
+
+    <!-- Register form -->
+    <div id="form-register" class="hidden">
+      <div class="form-row">
+        <label class="flabel">Username <span class="muted">(min 3 chars)</span></label>
+        <input class="field" id="r-user" style="width:100%" placeholder="your_username"/>
+      </div>
+      <div class="form-row">
+        <label class="flabel">Email</label>
+        <input class="field" id="r-email" style="width:100%" type="email" placeholder="you@example.com"/>
+      </div>
+      <div class="form-row">
+        <label class="flabel">Password <span class="muted">(min 6 chars)</span></label>
+        <input class="field" id="r-pass" style="width:100%" type="password" placeholder="••••••••"
+               onkeydown="if(event.key==='Enter')doRegister()"/>
+      </div>
+      <div class="login-btn-wrap">
+        <button class="btn btn-primary btn-lg btn-block" id="btn-register" onclick="doRegister()">Create account</button>
+        <div class="divider">or</div>
+        <button class="btn btn-block" onclick="guestMode()">Continue as guest</button>
+      </div>
+    </div>
+
+    <div id="err" style="color:var(--red);font-size:12.5px;margin-top:12px;min-height:16px;text-align:center"></div>
+
+    <!-- API health indicator -->
+    <div class="api-status-row">
+      <div class="api-dot" id="api-dot"></div>
+      <span id="api-status-text">Checking API…</span>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/api.js"></script>
+<script>
+/* ── Theme toggle ── */
+function getTheme(){ return document.documentElement.getAttribute("data-theme")==="light"?"light":"dark"; }
+function setTheme(mode){
+  if(mode==="light") document.documentElement.setAttribute("data-theme","light");
+  else document.documentElement.removeAttribute("data-theme");
+  try{ localStorage.setItem("qai_theme",mode); }catch{}
+  const btn = document.getElementById("btn-theme");
+  btn.textContent = mode==="light" ? "☀️" : "🌙";
+}
+document.getElementById("btn-theme").onclick = () => setTheme(getTheme()==="light"?"dark":"light");
+setTheme(getTheme());
+
+/* ── API health check ── */
+(async ()=>{
+  const dot  = document.getElementById("api-dot");
+  const text = document.getElementById("api-status-text");
+  try{
+    const r = await fetch(QuantAPI.BASE + "/", { signal: AbortSignal.timeout(4000) });
+    if(r.ok){
+      dot.classList.add("online");
+      const d = await r.json();
+      text.textContent = `API online · ${d.version||""}`;
+    } else { throw new Error(); }
+  }catch{
+    dot.classList.add("offline");
+    text.textContent = "API offline — run: uvicorn src.api:app --reload --port 8000";
+  }
+})();
+
+/* ── Helpers ── */
+function switchTab(t){
+  document.getElementById("tab-login").classList.toggle("active",   t==="login");
+  document.getElementById("tab-register").classList.toggle("active", t==="register");
+  document.getElementById("form-login").classList.toggle("hidden",    t!=="login");
+  document.getElementById("form-register").classList.toggle("hidden", t!=="register");
+  document.getElementById("err").textContent = "";
+}
+function setErr(msg){ document.getElementById("err").textContent = msg; }
+function setLoading(btnId, loading, label){
+  const btn = document.getElementById(btnId);
+  btn.disabled = loading;
+  btn.textContent = loading ? "…" : label;
+}
+function nextUrl(){ return new URLSearchParams(location.search).get("next")||"index.html"; }
+
+/* ── Sign in ── */
+async function doLogin(){
+  const u = document.getElementById("l-user").value.trim();
+  const p = document.getElementById("l-pass").value;
+  setErr("");
+  if(!u||!p){ setErr("Please fill in both fields."); return; }
+  setLoading("btn-login", true, "Sign in");
+  try{
+    const data = await QuantAPI.login(u, p);
+    QuantAPI.setSession(data.token, data.user);
+    QuantAPI.setGuest(false);
+    location.href = nextUrl();
+  }catch(e){
+    setErr(e.message || "Invalid username or password.");
+    setLoading("btn-login", false, "Sign in");
+  }
+}
+
+/* ── Register ── */
+async function doRegister(){
+  const u = document.getElementById("r-user").value.trim();
+  const e = document.getElementById("r-email").value.trim();
+  const p = document.getElementById("r-pass").value;
+  setErr("");
+  if(!u||!e||!p){ setErr("Please fill in all fields."); return; }
+  if(u.length < 3){ setErr("Username must be at least 3 characters."); return; }
+  if(p.length < 6){ setErr("Password must be at least 6 characters."); return; }
+  setLoading("btn-register", true, "Create account");
+  try{
+    await QuantAPI.register(u, e, p);
+    document.getElementById("l-user").value = u;
+    document.getElementById("l-pass").value = p;
+    switchTab("login");
+    await doLogin();
+  }catch(err){
+    setErr(err.message);
+    setLoading("btn-register", false, "Create account");
+  }
+}
+
+/* ── Guest ── */
+function guestMode(){ QuantAPI.setGuest(true); location.href = nextUrl(); }
+
+/* ── Already signed in? ── */
+if(QuantAPI.getToken()) location.href = nextUrl();
+</script>
+</body>
+</html>

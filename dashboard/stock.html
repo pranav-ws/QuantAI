@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Stock — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="signals">
+
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+  <div class="breadcrumb"><a href="signals.html">Signals</a> / <span id="bc-ticker">…</span></div>
+
+  <div class="page-head" id="stock-head">
+    <div class="loading-row"><div class="spinner"></div>Loading signal…</div>
+  </div>
+
+  <div class="grid-2">
+    <div>
+      <div class="card">
+        <div class="card-head" style="flex-wrap:wrap;gap:10px">
+          <div class="card-title">Price chart</div>
+          <div class="chart-toolbar" style="margin:0">
+            <div class="range-btns" id="range-btns">
+              <button class="range-btn" data-r="1M">1M</button>
+              <button class="range-btn" data-r="3M">3M</button>
+              <button class="range-btn active" data-r="6M">6M</button>
+              <button class="range-btn" data-r="1Y">1Y</button>
+              <button class="range-btn" data-r="All">All</button>
+            </div>
+            <div class="chart-legend">
+              <label><input type="checkbox" id="ov-sma20"/> <span class="dot" style="background:var(--accent2)"></span>SMA 20</label>
+              <label><input type="checkbox" id="ov-sma50"/> <span class="dot" style="background:var(--violet)"></span>SMA 50</label>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="chart-mount"><div class="loading-row"><div class="spinner"></div>Loading price history…</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">📰 News &amp; sentiment</div><span class="muted" id="news-label" style="font-size:12px"></span></div>
+        <div class="card-body" id="news-mount"><div class="loading-row"><div class="spinner"></div>Loading headlines…</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">🤖 Model breakdown</div></div>
+        <div class="card-body" id="model-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">📐 Key indicators</div></div>
+        <div class="card-body" id="ind-mount"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">Next steps</div></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px" id="actions-mount"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/candlechart.js"></script>
+<script>
+const TICKER = ensureNS(qs("ticker") || "");
+let chart = null;
+let ALL_BARS = [];
+let watched = false;
+
+const RANGE_DAYS = { "1M":34, "3M":95, "6M":185, "1Y":370, "All":2000 };
+let currentRange = "6M";
+
+if(!TICKER){ document.getElementById("stock-head").innerHTML = `<div class="empty-state"><div class="ic">❔</div>No ticker specified.</div>`; }
+
+function renderHead(sig){
+  const isBuy = sig.signal === "BUY";
+  document.getElementById("bc-ticker").textContent = tickerShort(sig.ticker);
+  document.title = `${tickerShort(sig.ticker)} — QuantAI`;
+  document.getElementById("stock-head").innerHTML = `
+    <div>
+      <div class="page-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        ${tickerShort(sig.ticker)}
+        <span class="badge ${isBuy?"badge-buy":"badge-skip"}">${isBuy?"● BUY":"○ SKIP"}</span>
+        <button class="btn ${watched?'btn-primary':''}" id="btn-watch" style="padding:5px 12px">${watched?"★ Watching":"☆ Watch"}</button>
+      </div>
+      <div class="page-sub">${sig.name||""} · ${sig.sector||""} · updated ${new Date(sig.updated_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</div>
+    </div>
+    <div style="text-align:right">
+      <div class="stat-value num">₹${fmtNum(sig.price)}</div>
+      <div class="dim" style="font-size:12px">Confidence ${fmtPct(sig.confidence)} · ${sig.model_type||""}</div>
+    </div>
+  `;
+  document.getElementById("btn-watch").onclick = () => toggleWatch(sig.ticker);
+
+  document.getElementById("actions-mount").innerHTML = `
+    <a class="btn btn-primary btn-block" href="options.html?ticker=${tickerShort(sig.ticker)}">🧮 Build an options strategy</a>
+    <a class="btn btn-block" href="signals.html">📊 Back to all signals</a>
+  `;
+}
+
+async function toggleWatch(ticker){
+  if(!QuantAPI.getToken()){ toast("Sign in to use your watchlist.", "err"); return; }
+  try{
+    if(watched){ await QuantAPI.removeWatch(ticker); watched=false; toast("Removed from watchlist"); }
+    else{ await QuantAPI.addWatch(ticker); watched=true; toast("Added to watchlist"); }
+    const b = document.getElementById("btn-watch");
+    b.textContent = watched ? "★ Watching" : "☆ Watch";
+    b.classList.toggle("btn-primary", watched);
+  }catch(e){ toast(e.message, "err"); }
+}
+
+function renderModelBreakdown(sig){
+  const ind       = sig.individual || {};
+  const agreement = sig.agreement  || "single";
+  const agreeMap  = {
+    strong:   { cls:"badge-strong",  label:"Strong — all models agree ✅" },
+    moderate: { cls:"badge-xgb",     label:"Moderate — minor divergence" },
+    weak:     { cls:"badge-weak",    label:"Weak — models disagree ⚠️" },
+    single:   { cls:"",              label:"Single model" },
+  };
+  const agreeInfo = agreeMap[agreement] || agreeMap.single;
+
+  // All 5 possible models with friendly names
+  const ALL_MODELS = [
+    { key:"RF",          label:"Random Forest",     badge:"badge-rf",   trainCmd:"python train_all_models.py" },
+    { key:"XGBoost",     label:"XGBoost",           badge:"badge-xgb",  trainCmd:"python train_xgboost_all.py" },
+    { key:"SeqNN",       label:"Seq Neural Net",    badge:"badge-seq",  trainCmd:"python train_lstm_all.py" },
+    { key:"Transformer", label:"Transformer",       badge:"badge-seq",  trainCmd:"python train_transformer_all.py" },
+    { key:"RL",          label:"RL Agent",          badge:"badge-rl",   trainCmd:"python train_rl_agent.py" },
+  ];
+  // Also check LSTM key (alias for SeqNN)
+  if(ind.LSTM && !ind.SeqNN) ind.SeqNN = ind.LSTM;
+
+  const modelRows = ALL_MODELS.map(m=>{
+    const val = ind[m.key];
+    if(val != null){
+      const pct = Math.round(val * 100);
+      const barColor = pct >= 58 ? "var(--green)" : "var(--red)";
+      return `<div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px">
+          <span class="badge ${m.badge}">${m.label}</span>
+          <span class="mono" style="color:${barColor};font-weight:700">${pct}%</span>
+        </div>
+        <div class="conf-bar" style="width:100%;height:6px">
+          <div class="conf-fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+      </div>`;
+    } else {
+      return `<div style="margin-bottom:12px;opacity:.55">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+          <span class="badge" style="background:var(--panel-2);color:var(--muted)">${m.label}</span>
+          <span class="muted" style="font-size:10.5px">not trained</span>
+        </div>
+        <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);padding:3px 6px;background:var(--panel-2);border-radius:4px">${m.trainCmd}</div>
+      </div>`;
+    }
+  }).join("");
+
+  // Rule-based signals
+  const rb      = sig.rule_based || {};
+  const rbRows  = Object.entries(rb).map(([name,d])=>`
+    <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px">
+      <div style="display:flex;justify-content:space-between;font-size:12px">
+        <strong>${name.replace(/_/g," ")}</strong>
+        <span class="badge ${d.signal==='BUY'?'badge-buy':'badge-skip'}">${d.signal}</span>
+      </div>
+      <div class="dim" style="font-size:11.5px;margin-top:3px">${d.reason||""}</div>
+    </div>`).join("");
+
+  // FII/DII modifier badge (from signal)
+  const fiiMod = sig.fii_modifier;
+  const fiiHtml = fiiMod != null && fiiMod !== 1.0
+    ? `<div style="margin-top:10px;padding:8px 10px;background:var(--panel-2);border-radius:7px;font-size:12px">
+        <span class="muted">FII/DII modifier</span>
+        <span class="mono" style="float:right;color:${fiiMod>1?'var(--green)':'var(--red)'}">${fiiMod>1?"+":""}${((fiiMod-1)*100).toFixed(1)}%</span>
+      </div>` : "";
+
+  document.getElementById("model-mount").innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <span class="muted" style="font-size:11.5px">Agreement</span>
+      <span class="badge ${agreeInfo.cls}" style="font-size:10px">${agreeInfo.label}</span>
+    </div>
+    ${modelRows}
+    ${fiiHtml}
+    ${rbRows ? `<div style="margin-top:6px">${rbRows}</div>` : ""}
+  `;
+}
+
+function renderIndicators(sig){
+  const rows = [
+    ["RSI (14)", sig.rsi, sig.rsi>70?"var(--red)":sig.rsi<30?"var(--green)":"var(--text)"],
+    ["MACD", sig.macd, null],
+    ["Bollinger width", sig.bb_width, null],
+    ["Volume ratio", sig.volume_ratio, sig.volume_ratio>1.5?"var(--accent)":"var(--text)"],
+  ];
+  document.getElementById("ind-mount").innerHTML = rows.map(([label,val,color])=>`
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+      <span class="muted">${label}</span><span class="mono" style="color:${color||'var(--text)'}">${val!=null?Number(val).toFixed(2):"—"}</span>
+    </div>`).join("");
+}
+
+async function loadSignal(){
+  try{
+    const sig = await QuantAPI.signal(TICKER);
+    if(sig.error){ throw new Error(sig.error); }
+    try{ const wl = await (QuantAPI.getToken() ? QuantAPI.watchlist() : Promise.resolve({watchlist:[]})); watched = (wl.watchlist||[]).some(x=>x.ticker===sig.ticker); }catch{}
+    renderHead(sig);
+    renderModelBreakdown(sig);
+    renderIndicators(sig);
+  }catch(e){
+    document.getElementById("stock-head").innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+    document.getElementById("model-mount").innerHTML = "";
+  }
+}
+
+async function loadNews(){
+  try{
+    const d = await QuantAPI.news(TICKER, 8);
+    document.getElementById("news-label").textContent = d.sentiment_label || "";
+    const arts = d.articles || [];
+
+    const staleNote = d.stale && d.last_updated
+      ? `<div class="dim" style="font-size:11px;padding:8px 0 4px;border-bottom:1px solid var(--border);margin-bottom:4px">
+           No fresh headlines right now — showing the last update from ${new Date(d.last_updated).toLocaleString()}
+         </div>`
+      : "";
+
+    document.getElementById("news-mount").innerHTML = arts.length
+      ? staleNote + arts.map(a=>`
+      <a href="${a.link}" target="_blank" rel="noopener" style="display:block;padding:11px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;gap:10px">
+          <span style="font-size:13px;flex:1">${a.title}</span>
+          <span class="badge ${a.score>0.05?'badge-buy':a.score<-0.05?'badge-sell':'badge-skip'}" style="flex-shrink:0">${a.sentiment}</span>
+        </div>
+        <div class="dim" style="font-size:11px;margin-top:4px">${a.publisher||""} · ${a.date||""}</div>
+      </a>`).join("")
+      : `<div class="empty-state"><div class="ic">📰</div>No recent headlines found.</div>`;
+  }catch(e){
+    document.getElementById("news-mount").innerHTML = `<div class="empty-state"><div class="ic">—</div>${e.message}</div>`;
+  }
+}
+
+function applyRange(r){
+  currentRange = r;
+  document.querySelectorAll(".range-btn").forEach(b=>b.classList.toggle("active", b.dataset.r===r));
+  const days = RANGE_DAYS[r];
+  const bars = days >= ALL_BARS.length ? ALL_BARS : ALL_BARS.slice(-days);
+  if(chart) chart.setData(bars);
+}
+
+async function loadPrices(){
+  try{
+    const d = await QuantAPI.prices(TICKER, 2000);
+    const rows = (d.prices || []).slice().reverse(); // API returns newest-first
+    ALL_BARS = rows.map(r => ({ date:r.date, open:+r.open, high:+r.high, low:+r.low, close:+r.close, volume:+r.volume }));
+    document.getElementById("chart-mount").innerHTML = "";
+    chart = new CandleChart(document.getElementById("chart-mount"));
+    applyRange(currentRange);
+  }catch(e){
+    document.getElementById("chart-mount").innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+document.querySelectorAll(".range-btn").forEach(b => b.onclick = () => applyRange(b.dataset.r));
+document.getElementById("ov-sma20").onchange = e => chart && chart.setOverlays({ sma20: e.target.checked });
+document.getElementById("ov-sma50").onchange = e => chart && chart.setOverlays({ sma50: e.target.checked });
+
+if(TICKER){
+  loadSignal();
+  loadPrices();
+  loadNews();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: quantai-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.api:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: QUANTAI_SECRET
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.12.0
+    disk:
+      name: quantai-data
+      mountPath: /app/data
+      sizeGB: 1

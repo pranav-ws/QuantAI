@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+*.h5
+*.db
+*.log
+.env
+.git/
+node_modules/
+*.png
+*.jpg
+*.jpeg
+models/model_*.png

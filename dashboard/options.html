@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Options Desk — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="options">
+
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+<div class="page-head">
+  <div>
+    <div class="page-title">⚙ Options Desk</div>
+    <div class="page-sub">Live NSE chains · Black-Scholes greeks · Strategy payoff builder · AI suggestions</div>
+  </div>
+  <div id="market-status-badge"></div>
+</div>
+
+<!-- Market closed banner (shown when NSE is closed) -->
+<div id="market-closed-banner" style="display:none;margin-bottom:14px">
+  <div class="market-closed-badge" style="padding:8px 14px;font-size:12.5px;width:100%;border-radius:8px">
+    🔔 NSE is currently closed — showing <strong>previous session data</strong>.
+    Chains and prices are from the last trading day.
+    <span id="market-closed-time" class="muted" style="margin-left:8px;font-size:11px"></span>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-t="chain"   onclick="switchTab('chain')">Chain</button>
+  <button class="tab"        data-t="build"   onclick="switchTab('build')">Strategy Builder</button>
+  <button class="tab"        data-t="suggest" onclick="switchTab('suggest')">AI Suggest</button>
+  <button class="tab"        data-t="scan"    onclick="switchTab('scan')">Scanner</button>
+</div>
+
+<!-- ══ CHAIN ══ -->
+<div class="tab-page" id="tp-chain">
+  <div class="card">
+    <div class="card-head" style="flex-wrap:wrap;gap:10px">
+      <div class="card-title">Options Chain</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <!-- Stock selector with full names -->
+        <select class="field" id="ch-ticker-sel" style="min-width:220px" onchange="onChainTickerChange()">
+          <option value="">— Select a stock —</option>
+        </select>
+        <select class="field" id="ch-expiry">
+          <option value="0">Nearest expiry</option>
+          <option value="1">Next expiry</option>
+          <option value="2">+2</option>
+          <option value="3">+3</option>
+        </select>
+        <select class="field" id="ch-strikes">
+          <option value="6">6 strikes</option>
+          <option value="10" selected>10 strikes</option>
+          <option value="15">15 strikes</option>
+        </select>
+        <button class="btn btn-primary" id="btn-load-chain">Load chain</button>
+      </div>
+    </div>
+    <div class="card-body" id="chain-mount">
+      <div class="empty-state"><div class="ic">🧮</div>Select a stock and click Load to fetch the chain.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STRATEGY BUILDER ══ -->
+<div class="tab-page hidden" id="tp-build">
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head"><div class="card-title">Build a strategy</div></div>
+      <div class="card-body">
+        <div class="form-row">
+          <label class="flabel">Strategy</label>
+          <select class="field" id="b-strategy" style="width:100%">
+            <option value="long_call">Long Call</option>
+            <option value="long_put">Long Put</option>
+            <option value="bull_call_spread">Bull Call Spread</option>
+            <option value="bear_put_spread">Bear Put Spread</option>
+            <option value="long_straddle">Long Straddle</option>
+            <option value="iron_condor">Iron Condor</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="flabel">Stock</label>
+          <select class="field" id="b-ticker-sel" style="width:100%" onchange="document.getElementById('b-ticker').value=this.value">
+            <option value="">— Select a stock —</option>
+          </select>
+          <input type="hidden" id="b-ticker"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="form-row"><label class="flabel">Spot price</label><input class="field" id="b-spot" type="number" step="0.05" style="width:100%"/></div>
+          <div class="form-row"><label class="flabel">Days to expiry</label><input class="field" id="b-dte" type="number" value="28" style="width:100%"/></div>
+        </div>
+        <div class="form-row"><label class="flabel">Implied vol (e.g. 0.24 = 24%)</label><input class="field" id="b-sigma" type="number" step="0.01" value="0.24" style="width:100%"/></div>
+        <div class="dim" style="font-size:11.5px;margin-bottom:10px">Strikes K1–K4 optional — blank = sensible ATM/±3%/±6% defaults.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <input class="field" id="b-k1" placeholder="K1"/>
+          <input class="field" id="b-k2" placeholder="K2"/>
+          <input class="field" id="b-k3" placeholder="K3"/>
+          <input class="field" id="b-k4" placeholder="K4"/>
+        </div>
+        <button class="btn btn-primary btn-block" style="margin-top:14px" id="btn-build">Build strategy</button>
+        <button class="btn btn-block" style="margin-top:8px" id="btn-mock" onclick="openMockModal()">🎯 Practice on previous-day data</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Payoff</div></div>
+      <div class="card-body" id="build-result">
+        <div class="empty-state"><div class="ic">📈</div>Fill in the form and build a strategy.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ AI SUGGEST ══ -->
+<div class="tab-page hidden" id="tp-suggest">
+  <div class="card">
+    <div class="card-head" style="flex-wrap:wrap;gap:10px">
+      <div class="card-title">AI Strategy Suggestion</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select class="field" id="sg-ticker-sel" style="min-width:220px" onchange="document.getElementById('sg-ticker').value=this.value">
+          <option value="">— Select a stock —</option>
+        </select>
+        <input type="hidden" id="sg-ticker"/>
+        <button class="btn btn-primary" id="btn-suggest">Suggest</button>
+      </div>
+    </div>
+    <div class="card-body" id="suggest-mount">
+      <div class="empty-state"><div class="ic">🤖</div>Combines ensemble signal with the live chain to recommend a strategy.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCANNER ══ -->
+<div class="tab-page hidden" id="tp-scan">
+  <div class="card">
+    <div class="card-head" style="flex-wrap:wrap;gap:10px">
+      <div class="card-title">Options Opportunity Scanner</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label class="dim" style="font-size:12px">Min confidence</label>
+        <input class="field" id="sc-conf" type="number" step="0.01" value="0.58" style="width:80px"/>
+        <button class="btn btn-primary" id="btn-scan">Scan all 50</button>
+      </div>
+    </div>
+    <div class="card-body" id="scan-mount">
+      <div class="empty-state"><div class="ic">🔎</div>Heavy scan — runs ensemble + fetches chains for every candidate (~30–60s).</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Mock strategy practice modal ══ -->
+<div class="modal-overlay hidden" id="mock-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>🎯 Practice Strategy — Previous Day Data</h3>
+      <button class="icon-btn" onclick="closeMockModal()" style="width:26px;height:26px;font-size:13px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="market-closed-badge" style="margin-bottom:14px">
+        🔔 Market is closed — this simulation uses yesterday's closing prices and IV
+      </div>
+      <div id="mock-content">
+        <div class="loading-row"><div class="spinner"></div>Loading previous session data…</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeMockModal()">Close</button>
+      <button class="btn btn-primary" onclick="buildMockStrategy()">Build this strategy</button>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script>
+/* ── Stock universe for dropdowns ── */
+const STOCKS = [
+  ["RELIANCE","Reliance Industries","Energy"],
+  ["TCS","Tata Consultancy Services","Technology"],
+  ["HDFCBANK","HDFC Bank","Banking"],
+  ["INFY","Infosys","Technology"],
+  ["ICICIBANK","ICICI Bank","Banking"],
+  ["HINDUNILVR","Hindustan Unilever","FMCG"],
+  ["SBIN","State Bank of India","Banking"],
+  ["BHARTIARTL","Bharti Airtel","Telecom"],
+  ["ITC","ITC Limited","FMCG"],
+  ["KOTAKBANK","Kotak Mahindra Bank","Banking"],
+  ["AXISBANK","Axis Bank","Banking"],
+  ["INDUSINDBK","IndusInd Bank","Banking"],
+  ["HCLTECH","HCL Technologies","Technology"],
+  ["WIPRO","Wipro","Technology"],
+  ["TECHM","Tech Mahindra","Technology"],
+  ["ONGC","Oil & Natural Gas Corp","Energy"],
+  ["BPCL","Bharat Petroleum","Energy"],
+  ["NTPC","NTPC","Power"],
+  ["POWERGRID","Power Grid Corporation","Power"],
+  ["COALINDIA","Coal India","Power"],
+  ["BRITANNIA","Britannia Industries","FMCG"],
+  ["NESTLEIND","Nestle India","FMCG"],
+  ["TATACONSUM","Tata Consumer Products","FMCG"],
+  ["BAJAJ-AUTO","Bajaj Auto","Automobile"],
+  ["HEROMOTOCO","Hero MotoCorp","Automobile"],
+  ["MARUTI","Maruti Suzuki","Automobile"],
+  ["TATAMOTORS","Tata Motors","Automobile"],
+  ["EICHERMOT","Eicher Motors","Automobile"],
+  ["M&M","Mahindra & Mahindra","Automobile"],
+  ["SUNPHARMA","Sun Pharmaceutical","Pharma"],
+  ["DRREDDY","Dr Reddy's Laboratories","Pharma"],
+  ["CIPLA","Cipla","Pharma"],
+  ["DIVISLAB","Divi's Laboratories","Pharma"],
+  ["TATASTEEL","Tata Steel","Metals"],
+  ["HINDALCO","Hindalco Industries","Metals"],
+  ["JSWSTEEL","JSW Steel","Metals"],
+  ["ULTRACEMCO","UltraTech Cement","Cement"],
+  ["GRASIM","Grasim Industries","Cement"],
+  ["ASIANPAINT","Asian Paints","Consumer"],
+  ["TITAN","Titan Company","Consumer"],
+  ["TRENT","Trent","Consumer"],
+  ["APOLLOHOSP","Apollo Hospitals","Healthcare"],
+  ["HDFCLIFE","HDFC Life Insurance","Insurance"],
+  ["SBILIFE","SBI Life Insurance","Insurance"],
+  ["BAJFINANCE","Bajaj Finance","Financial Services"],
+  ["BAJAJFINSV","Bajaj Finserv","Financial Services"],
+  ["SHRIRAMFIN","Shriram Finance","Financial Services"],
+  ["LT","Larsen & Toubro","Infrastructure"],
+  ["ADANIPORTS","Adani Ports","Infrastructure"],
+  ["ADANIENT","Adani Enterprises","Conglomerate"],
+];
+
+function buildAllDropdowns(){
+  const ids = ["ch-ticker-sel","b-ticker-sel","sg-ticker-sel"];
+  ids.forEach(id=>{
+    const sel = document.getElementById(id);
+    STOCKS.forEach(([tk,name,sector])=>{
+      const opt = document.createElement("option");
+      opt.value = tk;
+      opt.textContent = `${tk} — ${name} (${sector})`;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+/* ── Market hours check (NSE: Mon-Fri 9:15–15:30 IST) ── */
+function isMarketOpen(){
+  const now = new Date();
+  const ist = new Date(now.toLocaleString("en-US",{timeZone:"Asia/Kolkata"}));
+  const day = ist.getDay();        // 0=Sun,6=Sat
+  const h   = ist.getHours();
+  const m   = ist.getMinutes();
+  const mins = h*60+m;
+  if(day===0||day===6) return false;
+  return mins >= 9*60+15 && mins < 15*60+30;
+}
+
+function checkMarketStatus(){
+  const open   = isMarketOpen();
+  const banner = document.getElementById("market-closed-banner");
+  const badge  = document.getElementById("market-status-badge");
+
+  if(!open){
+    banner.style.display = "block";
+    const now = new Date();
+    const ist = new Date(now.toLocaleString("en-US",{timeZone:"Asia/Kolkata"}));
+    document.getElementById("market-closed-time").textContent =
+      `Current IST: ${ist.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}`;
+    badge.innerHTML = `<span class="market-closed-badge">🔴 Market Closed</span>`;
+  } else {
+    badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;color:var(--green);font-size:12px;font-weight:700"><span style="width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block"></span>Market Open</span>`;
+  }
+  return open;
+}
+
+/* ── Tab switching ── */
+function switchTab(t){
+  document.querySelectorAll(".tabs .tab").forEach(b=>b.classList.toggle("active", b.dataset.t===t));
+  document.querySelectorAll(".tab-page").forEach(p=>p.classList.add("hidden"));
+  document.getElementById(`tp-${t}`).classList.remove("hidden");
+}
+
+/* ── Chain ticker sync ── */
+function onChainTickerChange(){
+  const v = document.getElementById("ch-ticker-sel").value;
+  document.getElementById("b-ticker-sel").value = v;
+  document.getElementById("b-ticker").value      = v;
+  document.getElementById("sg-ticker-sel").value = v;
+  document.getElementById("sg-ticker").value      = v;
+}
+
+/* Pre-fill from ?ticker= */
+const presetTicker = qs("ticker");
+if(presetTicker){
+  ["ch-ticker-sel","b-ticker-sel","sg-ticker-sel"].forEach(id=>{
+    const sel = document.getElementById(id);
+    // Find matching option after dropdown is built
+    setTimeout(()=>{ sel.value = presetTicker; },50);
+  });
+  document.getElementById("b-ticker").value = presetTicker;
+  document.getElementById("sg-ticker").value = presetTicker;
+}
+
+/* ── Payoff canvas ── */
+function drawPayoff(mountEl, spots, pnl, currentSpot, breakevens){
+  mountEl.innerHTML = "";
+  const canvas = document.createElement("canvas");
+  canvas.style.width="100%"; canvas.style.height="220px"; canvas.style.display="block";
+  mountEl.appendChild(canvas);
+  const dpr = window.devicePixelRatio||1;
+  const w = mountEl.getBoundingClientRect().width, h=220;
+  canvas.width=w*dpr; canvas.height=h*dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const css = getComputedStyle(document.documentElement);
+  const col = v => css.getPropertyValue(v).trim();
+  const padL=54,padR=14,padT=14,padB=26;
+  const plotW=w-padL-padR, plotH=h-padT-padB;
+  const minS=Math.min(...spots),maxS=Math.max(...spots);
+  const minP=Math.min(0,...pnl), maxP=Math.max(0,...pnl);
+  const xAt=s=>padL+((s-minS)/(maxS-minS))*plotW;
+  const yAt=p=>padT+plotH-((p-minP)/(maxP-minP||1))*plotH;
+  ctx.strokeStyle=col("--border-2"); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL,yAt(0)); ctx.lineTo(w-padR,yAt(0)); ctx.stroke();
+  ctx.fillStyle=col("--muted"); ctx.font="10.5px "+col("--font-mono");
+  ctx.fillText("0",padL-16,yAt(0)+3);
+  ctx.fillText(maxP.toFixed(0),padL-42,yAt(maxP)+3);
+  ctx.fillText(minP.toFixed(0),padL-42,yAt(minP)+3);
+  if(currentSpot!=null){
+    ctx.strokeStyle=col("--accent2"); ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(xAt(currentSpot),padT); ctx.lineTo(xAt(currentSpot),padT+plotH); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle=col("--accent2");
+    ctx.fillText("spot "+currentSpot.toFixed(0),xAt(currentSpot)+4,padT+11);
+  }
+  (breakevens||[]).forEach(be=>{
+    ctx.strokeStyle=col("--amber"); ctx.setLineDash([2,4]);
+    ctx.beginPath(); ctx.moveTo(xAt(be),padT); ctx.lineTo(xAt(be),padT+plotH); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+  ctx.beginPath();
+  spots.forEach((s,i)=>i===0?ctx.moveTo(xAt(s),yAt(pnl[i])):ctx.lineTo(xAt(s),yAt(pnl[i])));
+  ctx.strokeStyle=col("--accent"); ctx.lineWidth=2; ctx.stroke();
+  ctx.font="10.5px "+col("--font-mono");
+  ctx.fillStyle=col("--muted");
+  ctx.fillText(minS.toFixed(0),padL,h-6);
+  ctx.fillText(maxS.toFixed(0),w-padR-30,h-6);
+}
+
+/* ── Chain ── */
+async function loadChain(){
+  const mount = document.getElementById("chain-mount");
+  const ticker = document.getElementById("ch-ticker-sel").value;
+  if(!ticker){ toast("Select a stock first.","err"); return; }
+  mount.innerHTML=`<div class="loading-row"><div class="spinner"></div>Fetching chain${isMarketOpen()?"":" (previous session — market closed)"}…</div>`;
+  try{
+    const d = await QuantAPI.optionsChain(ticker, document.getElementById("ch-expiry").value, document.getElementById("ch-strikes").value);
+    document.getElementById("b-ticker-sel").value = ticker;
+    document.getElementById("b-ticker").value     = ticker;
+    document.getElementById("b-spot").value       = d.spot;
+    document.getElementById("sg-ticker-sel").value= ticker;
+    document.getElementById("sg-ticker").value    = ticker;
+
+    const mktNote = d.theoretical
+      ? `<div class="market-closed-badge" style="margin-bottom:12px">🧮 Theoretical chain — NSE options aren't available from our data provider, so this is modeled from real spot price + real historical volatility via Black-Scholes. OI/Volume/PCR/Max Pain need real market data we don't have, so they show as — rather than invented numbers.</div>`
+      : (!isMarketOpen() ? `<div class="market-closed-badge" style="margin-bottom:12px">🔔 Previous session data · Last close ₹${fmtNum(d.spot)}</div>` : "");
+    mount.innerHTML = mktNote + `
+      <div class="stat-grid" style="margin-bottom:16px">
+        <div class="stat-card"><div class="stat-label">Spot</div><div class="stat-value num">₹${fmtNum(d.spot)}</div></div>
+        <div class="stat-card"><div class="stat-label">Expiry</div><div class="stat-value" style="font-size:15px">${d.expiry} <span class="dim" style="font-size:11px">(${d.dte}d)</span></div></div>
+        <div class="stat-card"><div class="stat-label">ATM IV</div><div class="stat-value num">${d.atm_iv}%</div></div>
+        <div class="stat-card"><div class="stat-label">IV Rank<span class="tip" data-tip="Where today's IV sits vs its recent range. High = favour selling; Low = favour buying.">i</span></div><div class="stat-value num">${d.iv_rank}</div></div>
+        <div class="stat-card"><div class="stat-label">PCR (OI)<span class="tip" data-tip="Put/Call ratio by open interest.">i</span></div><div class="stat-value num">${d.pcr_oi}</div></div>
+        <div class="stat-card"><div class="stat-label">Max Pain<span class="tip" data-tip="Strike where writers collectively lose least at expiry.">i</span></div><div class="stat-value num">₹${fmtNum(d.max_pain,0)}</div></div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th colspan="5" style="text-align:center;color:var(--green)">CALLS</th>
+          <th style="text-align:center;background:var(--panel-2)">Strike</th>
+          <th colspan="5" style="text-align:center;color:var(--red)">PUTS</th>
+        </tr>
+        <tr><th>OI</th><th>Vol</th><th>IV%</th><th>Delta</th><th>Mid</th><th></th><th>Mid</th><th>Delta</th><th>IV%</th><th>Vol</th><th>OI</th></tr></thead>
+        <tbody>${chainRows(d.calls, d.puts, d.spot)}</tbody>
+      </table></div>`;
+  }catch(e){
+    mount.innerHTML=`<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+function chainRows(calls, puts, spot){
+  const m={};
+  (calls||[]).forEach(c=>(m[c.strike]||={}).call=c);
+  (puts||[]).forEach(p=>(m[p.strike]||={}).put=p);
+  const strikes=Object.keys(m).map(Number).sort((a,b)=>a-b);
+  const step=strikes.length>1?strikes[1]-strikes[0]:50;
+  return strikes.map(k=>{
+    const c=m[k].call,p=m[k].put;
+    const atm=Math.abs(k-spot)<step/2;
+    return `<tr style="${atm?'background:color-mix(in srgb,var(--accent) 7%,transparent)':''}">
+      <td class="num">${c?fmtInt(c.open_interest):"—"}</td>
+      <td class="num">${c?fmtInt(c.volume):"—"}</td>
+      <td class="num">${c?c.iv_pct:"—"}</td>
+      <td class="num">${c?c.delta.toFixed(2):"—"}</td>
+      <td class="num up">${c?fmtNum(c.mid):"—"}</td>
+      <td class="num" style="text-align:center;font-weight:700;background:var(--panel-2)">${fmtNum(k,0)}</td>
+      <td class="num down">${p?fmtNum(p.mid):"—"}</td>
+      <td class="num">${p?p.delta.toFixed(2):"—"}</td>
+      <td class="num">${p?p.iv_pct:"—"}</td>
+      <td class="num">${p?fmtInt(p.volume):"—"}</td>
+      <td class="num">${p?fmtInt(p.open_interest):"—"}</td>
+    </tr>`;
+  }).join("");
+}
+document.getElementById("btn-load-chain").onclick = loadChain;
+
+/* ── Strategy builder ── */
+async function buildStrategy(){
+  const mount = document.getElementById("build-result");
+  const body={
+    strategy: document.getElementById("b-strategy").value,
+    ticker:   document.getElementById("b-ticker").value||document.getElementById("b-ticker-sel").value||"NIFTY",
+    spot:     parseFloat(document.getElementById("b-spot").value),
+    dte:      parseInt(document.getElementById("b-dte").value,10)||28,
+    sigma:    parseFloat(document.getElementById("b-sigma").value)||0.24,
+    r:        0.065,
+  };
+  ["k1","k2","k3","k4"].forEach((f,i)=>{
+    const v=document.getElementById("b-"+f).value;
+    if(v) body["K"+(i+1)]=parseFloat(v);
+  });
+  if(!body.spot){ toast("Enter a spot price (or load a chain first).","err"); return; }
+  mount.innerHTML=`<div class="loading-row"><div class="spinner"></div>Pricing…</div>`;
+  try{
+    const d=await QuantAPI.optionsStrategy(body);
+    renderStrategyResult(mount,d,body.spot);
+  }catch(e){ mount.innerHTML=`<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`; }
+}
+
+function renderStrategyResult(mount,d,spot){
+  mount.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <strong>${d.strategy}</strong>
+      <span class="badge ${d.credit_or_debit==='CREDIT'?'badge-buy':'badge-skip'}">${d.credit_or_debit} ₹${fmtNum(Math.abs(d.net_premium),0)}</span>
+    </div>
+    <div id="payoff-mount"></div>
+    <div class="stat-grid" style="margin:14px 0">
+      <div class="stat-card"><div class="stat-label">Max Profit</div><div class="stat-value num up">${d.max_profit!=null?"₹"+fmtNum(d.max_profit,0):"Unlimited"}</div></div>
+      <div class="stat-card"><div class="stat-label">Max Loss</div><div class="stat-value num down">${d.max_loss!=null?"₹"+fmtNum(Math.abs(d.max_loss),0):"Unlimited"}</div></div>
+      <div class="stat-card"><div class="stat-label">Breakeven(s)</div><div class="stat-value" style="font-size:14px">${(d.breakevens||[]).map(b=>b.toFixed(0)).join(", ")||"—"}</div></div>
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px" class="dim">
+      ${Object.entries(d.net_greeks||{}).map(([k,v])=>`<span><strong class="mono">${k}</strong> ${v.toFixed?v.toFixed(4):v}</span>`).join("")}
+    </div>
+    <div class="dim" style="font-size:11.5px;margin-top:10px">${d.rationale||""}</div>
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Leg</th><th>Type</th><th>Strike</th><th>Premium</th></tr></thead><tbody>
+      ${(d.legs||[]).map(l=>`<tr><td>${l.action||l.side||""}</td><td>${l.option_type||l.type||""}</td><td class="num">${l.K!=null?fmtNum(l.K,0):"—"}</td><td class="num">${l.premium!=null?fmtNum(l.premium):"—"}</td></tr>`).join("")}
+    </tbody></table></div>`;
+  if(d.payoff_curve) drawPayoff(document.getElementById("payoff-mount"),d.payoff_curve.spots,d.payoff_curve.pnl,spot,d.breakevens);
+}
+document.getElementById("btn-build").onclick = buildStrategy;
+
+/* ── Mock strategy modal (practice on previous day data) ── */
+function openMockModal(){
+  document.getElementById("mock-modal").classList.remove("hidden");
+  loadMockData();
+}
+function closeMockModal(){
+  document.getElementById("mock-modal").classList.add("hidden");
+}
+async function loadMockData(){
+  const mount  = document.getElementById("mock-content");
+  const ticker = document.getElementById("b-ticker").value||document.getElementById("b-ticker-sel").value;
+  const strat  = document.getElementById("b-strategy").value;
+  const sigma  = parseFloat(document.getElementById("b-sigma").value)||0.24;
+
+  if(!ticker){ mount.innerHTML=`<div class="empty-state"><div class="ic">⚠️</div>Select a stock in the builder first.</div>`; return; }
+
+  mount.innerHTML=`<div class="loading-row"><div class="spinner"></div>Fetching previous session data…</div>`;
+  try{
+    // Load last close price from DB
+    const priceData = await QuantAPI.prices(ticker, 2);
+    const prevClose = priceData.prices&&priceData.prices.length ? priceData.prices[0].close : null;
+    if(!prevClose){ mount.innerHTML=`<div class="empty-state"><div class="ic">⚠️</div>No price data for ${ticker}.</div>`; return; }
+
+    const stratName = document.getElementById("b-strategy").options[document.getElementById("b-strategy").selectedIndex].text;
+    mount.innerHTML = `
+      <div style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">${ticker} — ${stratName}</div>
+        <div style="display:flex;gap:20px;font-size:12.5px">
+          <span>Previous close: <strong class="mono">₹${fmtNum(prevClose)}</strong></span>
+          <span>Date: <strong>${(priceData.prices[0].date||"").slice(0,10)}</strong></span>
+          <span>Simulated IV: <strong>${(sigma*100).toFixed(0)}%</strong></span>
+        </div>
+      </div>
+      <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:12px;color:var(--text-dim)">
+        <strong style="color:var(--accent)">📚 Practice Mode</strong><br/><br/>
+        This simulation uses yesterday's closing price of <strong>₹${fmtNum(prevClose)}</strong> as the spot.
+        Real options data isn't available when market is closed, so strikes and premiums are calculated 
+        using the Black-Scholes model with your specified IV.<br/><br/>
+        Click <strong>Build this strategy</strong> below to generate the payoff diagram and greeks.
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:var(--muted)">
+        💡 <em>Tip: Try different strategies on the same stock to compare payoff profiles at yesterday's spot.</em>
+      </div>`;
+
+    // Pre-fill spot with previous close
+    document.getElementById("b-spot").value = prevClose.toFixed(2);
+  }catch(e){
+    mount.innerHTML=`<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+async function buildMockStrategy(){
+  closeMockModal();
+  switchTab("build");
+  await buildStrategy();
+}
+
+/* ── AI Suggest ── */
+async function loadSuggest(){
+  const mount = document.getElementById("suggest-mount");
+  const t = document.getElementById("sg-ticker").value||document.getElementById("sg-ticker-sel").value;
+  if(!t){ toast("Select a stock first.","err"); return; }
+  document.getElementById("sg-ticker").value = t;
+  mount.innerHTML=`<div class="loading-row"><div class="spinner"></div>Running ensemble + fetching chain${isMarketOpen()?"":" (previous session)"}…</div>`;
+  try{
+    const d = await QuantAPI.optionsSuggest(t);
+    if(!d.strategy){ mount.innerHTML=`<div class="empty-state"><div class="ic">🤖</div>${d.rationale||"No strategy suggested for current signal."}</div>`; return; }
+    renderStrategyResult(mount,d,d.spot);
+    mount.insertAdjacentHTML("afterbegin",`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <span class="badge ${d.signal==='BUY'?'badge-buy':'badge-skip'}">${d.signal}</span>
+      <span class="dim">confidence ${fmtPct(d.confidence)} · spot ₹${fmtNum(d.spot)} · IV rank ${d.iv_rank ?? '—'}</span>
+      ${d.theoretical?'<span class="market-closed-badge">🧮 Theoretical (modeled IV — NSE chain not available)</span>':(!isMarketOpen()?'<span class="market-closed-badge">Previous session data</span>':'')}
+    </div>`);
+  }catch(e){ mount.innerHTML=`<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`; }
+}
+document.getElementById("btn-suggest").onclick = loadSuggest;
+
+/* ── Scanner ── */
+async function runScan(){
+  const mount = document.getElementById("scan-mount");
+  // parseFloat("0.00")||0.58 evaluates to 0.58 because 0 is falsy in JS —
+  // a user explicitly entering 0 (wanting to see every candidate,
+  // regardless of confidence) was silently overridden every time. Check
+  // for NaN specifically instead of using a falsy-value fallback.
+  const rawConf = parseFloat(document.getElementById("sc-conf").value);
+  const minConf = Number.isNaN(rawConf) ? 0.58 : rawConf;
+  mount.innerHTML=`<div class="loading-row"><div class="spinner"></div>Scanning all 50 stocks — up to 60s…</div>`;
+  try{
+    const d = await QuantAPI.optionsScan(minConf);
+    if(!d.results||!d.results.length){ mount.innerHTML=`<div class="empty-state"><div class="ic">🔎</div>No candidates above ${fmtPct(minConf)} right now.</div>`; return; }
+    const anyTheoretical = d.results.some(r=>r.theoretical);
+    mount.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:10px">${d.candidates} candidates from ${d.scanned} scanned${anyTheoretical?' · 🧮 Theoretical chains (NSE options not available from our data provider — modeled from spot + historical volatility)':(!isMarketOpen()?' · Previous session data':'')}</div>
+      <div class="table-wrap"><table><thead><tr>
+        <th>Ticker</th><th>Signal</th><th>Confidence</th><th>Spot</th><th>IV Rank</th><th>Strategy</th><th>Max Profit</th><th>Max Loss</th>
+      </tr></thead><tbody>
+      ${d.results.map(r=>`<tr onclick="jumpSuggest('${tickerShort(r.ticker)}')">
+        <td><strong>${tickerShort(r.ticker)}</strong></td>
+        <td><span class="badge ${r.signal==='BUY'?'badge-buy':'badge-skip'}">${r.signal}</span></td>
+        <td class="num">${fmtPct(r.confidence)}</td>
+        <td class="num">₹${fmtNum(r.spot)}</td>
+        <td class="num">${r.iv_rank}</td>
+        <td>${r.strategy||"—"}</td>
+        <td class="num up">${r.max_profit!=null?"₹"+fmtNum(r.max_profit,0):"—"}</td>
+        <td class="num down">${r.max_loss!=null?"₹"+fmtNum(Math.abs(r.max_loss),0):"—"}</td>
+      </tr>`).join("")}
+      </tbody></table></div>`;
+  }catch(e){ mount.innerHTML=`<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`; }
+}
+function jumpSuggest(t){
+  switchTab("suggest");
+  document.getElementById("sg-ticker-sel").value = t;
+  document.getElementById("sg-ticker").value     = t;
+  loadSuggest();
+}
+document.getElementById("btn-scan").onclick = runScan;
+
+/* ── Init ── */
+buildAllDropdowns();
+checkMarketStatus();
+if(presetTicker) setTimeout(()=>{
+  document.getElementById("ch-ticker-sel").value = presetTicker;
+  document.getElementById("b-ticker-sel").value  = presetTicker;
+  document.getElementById("sg-ticker-sel").value = presetTicker;
+  document.getElementById("b-ticker").value      = presetTicker;
+  document.getElementById("sg-ticker").value     = presetTicker;
+  loadChain();
+}, 100);
+</script>
+</body>
+</html>

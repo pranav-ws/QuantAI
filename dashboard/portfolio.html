@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Portfolio — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="portfolio">
+
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+  <div class="page-head">
+    <div>
+      <div class="page-title">Portfolio &amp; Watchlist</div>
+      <div class="page-sub">Your paper trades, your watchlist, and the platform-wide paper book</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-t="mine" onclick="switchTab('mine')">My Portfolio</button>
+    <button class="tab" data-t="watch" onclick="switchTab('watch')">Watchlist</button>
+    <button class="tab" data-t="global" onclick="switchTab('global')">Platform Paper Book</button>
+  </div>
+
+  <!-- MY PORTFOLIO -->
+  <div class="tab-page" id="tp-mine">
+    <div class="stat-grid" id="mine-stats"></div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">💼 My Trades</div>
+        <button class="btn btn-primary" id="btn-log-trade" style="padding:5px 12px">+ Log a trade</button>
+      </div>
+      <div class="card-body" id="mine-body"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- WATCHLIST -->
+  <div class="tab-page hidden" id="tp-watch">
+    <div class="card">
+      <div class="card-head"><div class="card-title">⭐ My Watchlist</div><span class="muted" id="wl-count" style="font-size:12px"></span></div>
+      <div class="card-body" id="wl-body"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- GLOBAL PAPER BOOK -->
+  <div class="tab-page hidden" id="tp-global">
+    <div class="stat-grid" id="global-stats"></div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">📒 Recent Paper Trades (platform-wide)</div></div>
+      <div class="card-body" id="global-body"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- Log-trade modal (simple inline card, no overlay library needed) -->
+<div id="trade-modal" class="hidden" style="position:fixed;inset:0;background:rgba(10,14,26,.75);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div class="card" style="width:380px;max-width:100%;margin:0">
+    <div class="card-head"><div class="card-title">Log a paper trade</div><button class="btn" onclick="closeTradeModal()" style="padding:4px 10px">✕</button></div>
+    <div class="card-body">
+      <div class="form-row"><label class="flabel">Ticker</label><input class="field" id="t-ticker" style="width:100%" placeholder="e.g. INFY"/></div>
+      <div class="form-row"><label class="flabel">Shares</label><input class="field" id="t-shares" type="number" min="1" style="width:100%"/></div>
+      <div class="form-row"><label class="flabel">Buy price (₹)</label><input class="field" id="t-price" type="number" step="0.01" style="width:100%"/></div>
+      <div class="form-row"><label class="flabel">Stop loss (₹, optional)</label><input class="field" id="t-stop" type="number" step="0.01" style="width:100%"/></div>
+      <button class="btn btn-primary btn-block" onclick="submitTrade()">Save trade</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script>
+function switchTab(t){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active", b.dataset.t===t));
+  document.querySelectorAll(".tab-page").forEach(p=>p.classList.add("hidden"));
+  document.getElementById(`tp-${t}`).classList.remove("hidden");
+  if(t==="mine") loadMine();
+  if(t==="watch") loadWatch();
+  if(t==="global") loadGlobal();
+}
+
+/* ── My Portfolio ── */
+async function loadMine(){
+  const body = document.getElementById("mine-body");
+  if(!requireAuth(body, { message:"Sign in to view your personal paper-trading portfolio." })){
+    document.getElementById("mine-stats").innerHTML = "";
+    document.getElementById("btn-log-trade").classList.add("hidden");
+    return;
+  }
+  document.getElementById("btn-log-trade").classList.remove("hidden");
+  try{
+    const d = await QuantAPI.userPortfolio();
+    const pnlCls = (d.total_pnl||0) >= 0 ? "up" : "down";
+    document.getElementById("mine-stats").innerHTML = `
+      <div class="stat-card"><div class="stat-label">Open Trades</div><div class="stat-value num">${fmtInt(d.open_count)}</div></div>
+      <div class="stat-card"><div class="stat-label">Closed Trades</div><div class="stat-value num">${fmtInt(d.closed_count)}</div></div>
+      <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value num">${d.win_rate}%</div></div>
+      <div class="stat-card"><div class="stat-label">Total P&amp;L</div><div class="stat-value num ${pnlCls}">₹${fmtNum(d.total_pnl,0)}</div></div>
+    `;
+    const trades = d.trades || [];
+    if(!trades.length){
+      body.innerHTML = `<div class="empty-state"><div class="ic">💼</div>No trades yet.<div class="cta"><button class="btn btn-primary" onclick="openTradeModal()">Log your first trade</button></div></div>`;
+      return;
+    }
+    body.innerHTML = `<div class="table-wrap"><table><thead><tr>
+      <th>Ticker</th><th>Shares</th><th>Buy price</th><th>Stop loss</th><th>Date</th><th>Confidence</th><th>Status</th><th>P&amp;L</th>
+      </tr></thead><tbody>${trades.map(t=>{
+        const pnlCls2 = (t.pnl||0)>=0 ? "up" : "down";
+        return `<tr>
+          <td><strong>${tickerShort(t.ticker)}</strong></td>
+          <td class="num">${t.shares}</td>
+          <td class="num">₹${fmtNum(t.buy_price)}</td>
+          <td class="num">₹${fmtNum(t.stop_loss)}</td>
+          <td class="muted" style="font-size:12px">${t.signal_date||""}</td>
+          <td class="num">${t.confidence?fmtPct(t.confidence):"—"}</td>
+          <td><span class="badge ${t.status==='OPEN'?'badge-buy':'badge-skip'}">${t.status}</span></td>
+          <td class="num ${pnlCls2}">${t.pnl!=null?"₹"+fmtNum(t.pnl):"—"}</td>
+        </tr>`;
+      }).join("")}</tbody></table></div>`;
+  }catch(e){
+    body.innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+function openTradeModal(){ document.getElementById("trade-modal").classList.remove("hidden"); }
+function closeTradeModal(){ document.getElementById("trade-modal").classList.add("hidden"); }
+document.getElementById("btn-log-trade").onclick = openTradeModal;
+
+async function submitTrade(){
+  const ticker = document.getElementById("t-ticker").value.trim();
+  const shares = parseInt(document.getElementById("t-shares").value, 10);
+  const price  = parseFloat(document.getElementById("t-price").value);
+  const stop   = parseFloat(document.getElementById("t-stop").value) || 0;
+  if(!ticker || !shares || !price){ toast("Fill in ticker, shares and price.", "err"); return; }
+  try{
+    await QuantAPI.addTrade({ ticker, shares, price, stop_loss: stop, confidence: 0 });
+    toast("Trade logged.");
+    closeTradeModal();
+    loadMine();
+  }catch(e){ toast(e.message, "err"); }
+}
+
+/* ── Watchlist ── */
+async function loadWatch(){
+  const body = document.getElementById("wl-body");
+  if(!requireAuth(body, { message:"Sign in to build a personal watchlist. Star any signal to add it." })) return;
+  try{
+    const d = await QuantAPI.watchlist();
+    const items = d.watchlist || [];
+    document.getElementById("wl-count").textContent = `${items.length} stock${items.length!==1?"s":""}`;
+    if(!items.length){
+      body.innerHTML = `<div class="empty-state"><div class="ic">⭐</div>Nothing here yet — star a stock from Signals or a stock page.</div>`;
+      return;
+    }
+    body.innerHTML = `<div class="table-wrap"><table><thead><tr>
+      <th>Ticker</th><th>Name</th><th>Price</th><th>Signal</th><th>Confidence</th><th>Added</th><th></th>
+      </tr></thead><tbody>${items.map(s=>`<tr onclick="location.href='stock.html?ticker=${tickerShort(s.ticker)}'">
+        <td><strong>${tickerShort(s.ticker)}</strong></td>
+        <td class="muted">${(s.name||"").slice(0,22)}</td>
+        <td class="num">${s.price?"₹"+fmtNum(s.price):"—"}</td>
+        <td>${s.signal ? `<span class="badge ${s.signal==='BUY'?'badge-buy':'badge-skip'}">${s.signal}</span>` : "—"}</td>
+        <td class="num">${s.confidence?fmtPct(s.confidence):"—"}</td>
+        <td class="muted" style="font-size:12px">${(s.added_at||"").slice(0,10)}</td>
+        <td><button class="btn btn-danger" style="padding:4px 10px" onclick="event.stopPropagation();removeWatch('${s.ticker}')">Remove</button></td>
+      </tr>`).join("")}</tbody></table></div>`;
+  }catch(e){
+    body.innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+async function removeWatch(ticker){
+  try{ await QuantAPI.removeWatch(ticker); toast("Removed."); loadWatch(); }
+  catch(e){ toast(e.message, "err"); }
+}
+
+/* ── Global paper book ── */
+async function loadGlobal(){
+  const body = document.getElementById("global-body");
+  try{
+    const d = await QuantAPI.paperPortfolio();
+    document.getElementById("global-stats").innerHTML = `
+      <div class="stat-card"><div class="stat-label">Capital</div><div class="stat-value num">₹${fmtNum(d.capital,0)}</div></div>
+      <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value num">${fmtInt(d.total_trades)}</div></div>
+      <div class="stat-card"><div class="stat-label">Open</div><div class="stat-value num">${fmtInt(d.open_trades)}</div></div>
+      <div class="stat-card"><div class="stat-label">Closed</div><div class="stat-value num">${fmtInt(d.closed_trades)}</div></div>
+    `;
+    const log = d.trade_log || [];
+    if(!log.length){
+      body.innerHTML = `<div class="empty-state"><div class="ic">📒</div>No trades logged yet. Run <span class="mono">python paper_trade.py</span> to generate signals.</div>`;
+      return;
+    }
+    body.innerHTML = `<div class="table-wrap"><table><thead><tr>
+      <th>Ticker</th><th>Entry</th><th>Exit</th><th>Shares</th><th>Date</th><th>Status</th><th>P&amp;L</th>
+      </tr></thead><tbody>${log.slice().reverse().map(t=>{
+        const entry = t.price ?? t.buy_price;
+        const exitP = t.exit_price ?? t.sell_price;
+        const pnlCls = (t.pnl||0)>=0 ? "up" : "down";
+        return `<tr onclick="location.href='stock.html?ticker=${tickerShort(t.ticker)}'">
+          <td><strong>${tickerShort(t.ticker)}</strong></td>
+          <td class="num">${entry!=null?"₹"+fmtNum(entry):"—"}</td>
+          <td class="num">${exitP!=null?"₹"+fmtNum(exitP):"—"}</td>
+          <td class="num">${t.shares ?? "—"}</td>
+          <td class="muted" style="font-size:12px">${t.date || t.signal_date || ""}</td>
+          <td><span class="badge ${t.status==='OPEN'?'badge-buy':'badge-skip'}">${t.status||"—"}</span></td>
+          <td class="num ${pnlCls}">${t.pnl!=null?"₹"+fmtNum(t.pnl):"—"}</td>
+        </tr>`;
+      }).join("")}</tbody></table></div>`;
+  }catch(e){
+    body.innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+loadMine();
+</script>
+</body>
+</html>

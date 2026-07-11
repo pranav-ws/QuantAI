@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Risk Center — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="risk">
+
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+  <div class="page-head">
+    <div>
+      <div class="page-title">Risk Center</div>
+      <div class="page-sub">Tail risk, portfolio correlation, risk-parity sizing, and drawdown recovery state</div>
+    </div>
+    <button class="btn btn-primary" id="btn-refresh">⟳ Refresh</button>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head"><div class="card-title">🛡️ Tail Risk Index
+        <span class="tip" data-tip="A 0–100 composite of volatility, drawdown depth, and correlation breadth across the Nifty 50. Higher = broader market stress, not a single-stock signal.">i</span>
+      </div></div>
+      <div class="card-body" style="display:flex;gap:24px;flex-wrap:wrap;align-items:center" id="tri-mount">
+        <div class="loading-row"><div class="spinner"></div>Scanning 50 stocks…</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">📉 Drawdown Recovery</div></div>
+      <div class="card-body" id="recovery-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">🔗 Portfolio Correlation</div>
+      <select class="field" id="corr-period" style="padding:6px 10px">
+        <option value="1y">1 year</option>
+        <option value="2y" selected>2 years</option>
+        <option value="3y">3 years</option>
+        <option value="5y">5 years</option>
+      </select>
+    </div>
+    <div class="card-body" id="corr-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">⚖️ Risk Parity Allocator</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="field" id="rp-capital" type="number" value="100000" step="1000" style="width:130px;padding:6px 10px"/>
+        <button class="btn btn-primary" id="btn-allocate" style="padding:6px 12px">Allocate</button>
+      </div>
+    </div>
+    <div class="card-body" id="rp-mount">
+      <div class="empty-state"><div class="ic">⚖️</div>Set a capital amount and click Allocate to size today's BUY signals.</div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/gauge.js"></script>
+<script>
+async function loadTailRisk(){
+  const mount = document.getElementById("tri-mount");
+  try{
+    const d = await QuantAPI.tailRisk();
+    if(typeof d.tri !== "number"){ throw new Error(d.error || d.detail || "The server didn't return a usable Tail Risk score."); }
+    mount.innerHTML = `
+      <div id="tri-gauge" style="flex-shrink:0"></div>
+      <div style="flex:1;min-width:220px">
+        <div class="dim" style="margin-bottom:10px">${d.recommendation||""}</div>
+        ${Object.entries(d.components||{}).map(([k,v])=>`
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--border)">
+            <span class="muted">${k.replace(/_/g," ")}</span><span class="mono">${typeof v==='number'?v.toFixed(1):v}</span>
+          </div>`).join("")}
+        ${d.reasons && d.reasons.length ? `<div style="margin-top:10px" class="dim">${d.reasons.map(r=>`• ${r}`).join("<br/>")}</div>` : ""}
+      </div>
+    `;
+    renderGauge(document.getElementById("tri-gauge"), {
+      value: d.tri, label: "TAIL RISK INDEX", size: 200,
+      zones: [
+        {upTo:25, color:"--green", label:"LOW"},
+        {upTo:50, color:"--amber", label:"MODERATE"},
+        {upTo:75, color:"--accent2", label:"ELEVATED"},
+        {upTo:100, color:"--red", label: d.halt_trading ? "HALT TRADING" : "HIGH"},
+      ]
+    });
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state"><div class="ic">${e.timeout?"⏳":"⚠️"}</div>${e.message}
+      <div class="cta"><button class="btn" onclick="loadTailRisk()">Retry</button></div></div>`;
+  }
+}
+
+async function loadRecovery(){
+  const mount = document.getElementById("recovery-mount");
+  try{
+    const d = await QuantAPI.recoveryStatus();
+    const entries = Object.entries(d);
+    mount.innerHTML = entries.length ? `<div style="display:flex;flex-direction:column;gap:9px">${
+      entries.map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:12.5px">
+        <span class="muted">${k.replace(/_/g," ")}</span><span class="mono">${fmtVal(v)}</span></div>`).join("")
+    }</div>` : `<div class="empty-state"><div class="ic">📉</div>No recovery state recorded yet.</div>`;
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state"><div class="ic">${e.timeout?"⏳":"⚠️"}</div>${e.message}
+      <div class="cta"><button class="btn" onclick="loadRecovery()">Retry</button></div></div>`;
+  }
+}
+function fmtVal(v){
+  if(typeof v === "number") return Number.isInteger(v) ? v : v.toFixed(2);
+  if(typeof v === "boolean") return v ? "Yes" : "No";
+  if(v && typeof v === "object") return JSON.stringify(v);
+  return String(v ?? "—");
+}
+
+async function loadCorrelation(){
+  const mount = document.getElementById("corr-mount");
+  if(!requireAuth(mount, { message:"Sign in to view the correlation matrix." })) return;
+  mount.innerHTML = `<div class="loading-row"><div class="spinner"></div>Computing correlations across 50 stocks…</div>`;
+  try{
+    const period = document.getElementById("corr-period").value;
+    const d = await QuantAPI.correlation(period);
+    const div = Object.entries(d.diversification||{});
+    const mostDiverse = div.slice(0,8);
+    const leastDiverse = div.slice(-8).reverse();
+    mount.innerHTML = `
+      <div class="stat-grid" style="margin-bottom:18px">
+        <div class="stat-card"><div class="stat-label">Stocks</div><div class="stat-value num">${d.n_stocks}</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Pairwise Correlation</div><div class="stat-value num">${d.avg_correlation}</div></div>
+        <div class="stat-card"><div class="stat-label">Period</div><div class="stat-value">${d.period}</div></div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div class="card-title" style="margin-bottom:10px">Most correlated pairs</div>
+          <div class="table-wrap"><table><thead><tr><th>Pair</th><th>Sectors</th><th>Correlation</th></tr></thead><tbody>
+            ${(d.top_correlated_pairs||[]).map(p=>`<tr>
+              <td><strong>${tickerShort(p.ticker_a)}</strong> / <strong>${tickerShort(p.ticker_b)}</strong></td>
+              <td class="muted" style="font-size:12px">${p.sector_a} / ${p.sector_b}</td>
+              <td class="num">${p.correlation}</td>
+            </tr>`).join("")}
+          </tbody></table></div>
+        </div>
+        <div>
+          <div class="card-title" style="margin-bottom:10px">Diversification ranking</div>
+          <div class="dim" style="font-size:11.5px;margin-bottom:8px">Lower avg |correlation| = better diversifier</div>
+          ${mostDiverse.map(([t,v])=>diverBar(t,v,true)).join("")}
+          <div class="muted" style="font-size:11px;margin:10px 0 4px">Most correlated (avoid stacking together)</div>
+          ${leastDiverse.map(([t,v])=>diverBar(t,v,false)).join("")}
+        </div>
+      </div>
+    `;
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state"><div class="ic">${e.timeout?"⏳":"⚠️"}</div>${e.message}
+      <div class="cta"><button class="btn" onclick="loadCorrelation()">Retry</button></div></div>`;
+  }
+}
+function diverBar(ticker, val, good){
+  const pct = Math.min(100, Math.round(val*100));
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px">
+    <span style="width:88px;flex-shrink:0" class="mono">${tickerShort(ticker)}</span>
+    <div class="conf-bar" style="flex:1;max-width:none">
+      <div class="conf-fill" style="width:${pct}%;background:${good?'var(--green)':'var(--red)'}"></div>
+    </div>
+    <span class="mono muted" style="width:44px;text-align:right">${val.toFixed(2)}</span>
+  </div>`;
+}
+
+async function loadRiskParity(){
+  const mount = document.getElementById("rp-mount");
+  const capital = parseFloat(document.getElementById("rp-capital").value) || 100000;
+  mount.innerHTML = `<div class="loading-row"><div class="spinner"></div>Sizing positions for today's BUY signals…</div>`;
+  try{
+    const d = await QuantAPI.riskParity(capital);
+    if(!d.positions || !d.positions.length){
+      mount.innerHTML = `<div class="empty-state"><div class="ic">⚖️</div>No BUY signals to allocate right now.</div>`;
+      return;
+    }
+    mount.innerHTML = `
+      <div class="stat-grid" style="margin-bottom:16px">
+        <div class="stat-card"><div class="stat-label">Positions</div><div class="stat-value num">${d.n_positions}</div></div>
+        <div class="stat-card"><div class="stat-label">Deployed</div><div class="stat-value num">₹${fmtNum(d.total_deployed,0)}</div></div>
+        <div class="stat-card"><div class="stat-label">Cash Remaining</div><div class="stat-value num">₹${fmtNum(d.cash_remaining,0)}</div></div>
+        <div class="stat-card"><div class="stat-label">Target Risk / Position</div><div class="stat-value num">₹${fmtNum(d.target_risk_per_position,0)}</div></div>
+      </div>
+      <div class="table-wrap"><table><thead><tr>
+        <th>Ticker</th><th>Price</th><th>Shares</th><th>Value</th><th>Weight</th><th>Daily Vol</th><th>Daily Risk (₹)</th><th>Stop</th><th>Confidence</th>
+      </tr></thead><tbody>${d.positions.map(p=>`<tr onclick="location.href='stock.html?ticker=${tickerShort(p.ticker)}'">
+        <td><strong>${tickerShort(p.ticker)}</strong></td>
+        <td class="num">₹${fmtNum(p.price)}</td>
+        <td class="num">${p.shares}</td>
+        <td class="num">₹${fmtNum(p.trade_value,0)}</td>
+        <td class="num">${p.weight_pct}%</td>
+        <td class="num">${p.daily_vol_pct}%</td>
+        <td class="num">₹${fmtNum(p.daily_risk_inr,0)}</td>
+        <td class="num">₹${fmtNum(p.stop_loss)}</td>
+        <td class="num">${fmtPct(p.confidence)}</td>
+      </tr>`).join("")}</tbody></table></div>
+    `;
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state"><div class="ic">${e.timeout?"⏳":"⚠️"}</div>${e.message}
+      <div class="cta"><button class="btn" onclick="loadRiskParity()">Retry</button></div></div>`;
+  }
+}
+
+document.getElementById("corr-period").onchange = loadCorrelation;
+document.getElementById("btn-allocate").onclick = loadRiskParity;
+document.getElementById("btn-refresh").onclick = () => loadAllRisk();
+
+async function loadAllRisk(){
+  // These four all hit synchronous-blocking backend handlers, so they
+  // queue on the server regardless — running them one at a time client-side
+  // gives honest incremental progress instead of everything looking stuck.
+  await loadTailRisk();
+  await loadRecovery();
+  await loadCorrelation();
+}
+loadAllRisk();
+</script>
+</body>
+</html>

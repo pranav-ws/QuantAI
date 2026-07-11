@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Paper Trade — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="paper_trade">
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+<div class="page-head">
+  <div>
+    <div class="page-title">💼 Paper Trade</div>
+    <div class="page-sub">Simulated trading · ₹1,00,000 starting capital · No real money</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" onclick="loadAll()">⟳ Refresh</button>
+    <button class="btn btn-danger" onclick="confirmReset()">↺ Reset Portfolio</button>
+  </div>
+</div>
+
+<!-- Portfolio summary -->
+<div class="stat-grid" id="pt-stats">
+  <div class="stat-card"><div class="stat-label">Available Capital</div><div class="stat-value num" id="pt-capital">—</div></div>
+  <div class="stat-card"><div class="stat-label">Open Positions</div><div class="stat-value num" id="pt-open">—</div></div>
+  <div class="stat-card"><div class="stat-label">Total P&L</div><div class="stat-value num" id="pt-pnl">—</div></div>
+  <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value num" id="pt-wr">—</div></div>
+</div>
+
+<div class="grid-2" style="align-items:start">
+
+  <!-- ── Order panel ── -->
+  <div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">📋 Place Order</div></div>
+      <div class="card-body">
+
+        <!-- Buy / Sell toggle -->
+        <div class="order-type-tabs">
+          <button class="order-type-btn buy-active" id="btn-buy-tab"  onclick="setOrderSide('BUY')">BUY</button>
+          <button class="order-type-btn"            id="btn-sell-tab" onclick="setOrderSide('SELL')">SELL</button>
+        </div>
+
+        <!-- Stock selector with all 50 names visible -->
+        <div class="form-row">
+          <label class="flabel">Stock</label>
+          <select class="field" id="order-ticker" style="width:100%" onchange="onTickerChange()">
+            <option value="">— Select a stock —</option>
+          </select>
+        </div>
+
+        <!-- Live price display -->
+        <div id="live-price-row" style="display:none;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="muted" style="font-size:12px">Live price</span>
+            <span class="num" id="live-price-val" style="font-size:18px;font-weight:700">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:2px">
+            <span id="live-regime">—</span>
+            <span id="live-conf">—</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="flabel">Shares / Quantity</label>
+          <input type="number" class="field" id="order-shares" style="width:100%" placeholder="e.g. 10" min="1" step="1" oninput="updateOrderSummary()"/>
+        </div>
+
+        <div class="form-row">
+          <label class="flabel">Price (leave blank for live market price)</label>
+          <input type="number" class="field" id="order-price" style="width:100%" placeholder="Auto" step="0.01" oninput="updateOrderSummary()"/>
+        </div>
+
+        <!-- Order summary -->
+        <div id="order-summary" style="background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;display:none">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px">
+            <span class="muted">Estimated value</span><span class="num" id="os-value">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12.5px">
+            <span class="muted">Capital after order</span><span class="num" id="os-remaining">—</span>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-lg btn-block" id="btn-place-order" onclick="placeOrder()">
+          Place BUY Order
+        </button>
+        <div id="order-err" style="color:var(--red);font-size:12px;margin-top:8px;min-height:14px;text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- Quick signals panel -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🟢 Today's BUY Signals</div>
+        <span class="muted" style="font-size:11px">Click to auto-fill</span>
+      </div>
+      <div class="card-body tight">
+        <div id="quick-signals"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Positions & History ── -->
+  <div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">📌 Open Positions</div>
+        <span class="muted" id="open-count" style="font-size:11px"></span>
+      </div>
+      <div class="card-body tight">
+        <div id="positions-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">📜 Trade History</div>
+        <a class="btn" style="padding:3px 10px;font-size:11px" onclick="loadHistory()">Refresh</a>
+      </div>
+      <div class="card-body tight">
+        <div id="history-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Reset confirm modal -->
+<div class="modal-overlay hidden" id="reset-modal">
+  <div class="modal-box" style="width:400px">
+    <div class="modal-head">
+      <h3>↺ Reset Paper Portfolio</h3>
+      <button class="icon-btn" onclick="document.getElementById('reset-modal').classList.add('hidden')" style="width:26px;height:26px;font-size:13px">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-dim);font-size:13px">This will close all open positions and reset your capital back to <strong>₹1,00,000</strong>. All trade history will be preserved.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('reset-modal').classList.add('hidden')">Cancel</button>
+      <button class="btn btn-danger" onclick="doReset()">Reset Portfolio</button>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script>
+const STOCK_UNIVERSE = [
+  ["RELIANCE.NS","Reliance Industries","Energy"],
+  ["TCS.NS","Tata Consultancy Services","Technology"],
+  ["HDFCBANK.NS","HDFC Bank","Banking"],
+  ["INFY.NS","Infosys","Technology"],
+  ["ICICIBANK.NS","ICICI Bank","Banking"],
+  ["HINDUNILVR.NS","Hindustan Unilever","FMCG"],
+  ["SBIN.NS","State Bank of India","Banking"],
+  ["BHARTIARTL.NS","Bharti Airtel","Telecom"],
+  ["ITC.NS","ITC Limited","FMCG"],
+  ["KOTAKBANK.NS","Kotak Mahindra Bank","Banking"],
+  ["AXISBANK.NS","Axis Bank","Banking"],
+  ["INDUSINDBK.NS","IndusInd Bank","Banking"],
+  ["HCLTECH.NS","HCL Technologies","Technology"],
+  ["WIPRO.NS","Wipro","Technology"],
+  ["TECHM.NS","Tech Mahindra","Technology"],
+  ["ONGC.NS","Oil & Natural Gas Corp","Energy"],
+  ["BPCL.NS","Bharat Petroleum","Energy"],
+  ["NTPC.NS","NTPC","Power"],
+  ["POWERGRID.NS","Power Grid Corporation","Power"],
+  ["COALINDIA.NS","Coal India","Power"],
+  ["BRITANNIA.NS","Britannia Industries","FMCG"],
+  ["NESTLEIND.NS","Nestle India","FMCG"],
+  ["TATACONSUM.NS","Tata Consumer Products","FMCG"],
+  ["BAJAJ-AUTO.NS","Bajaj Auto","Automobile"],
+  ["HEROMOTOCO.NS","Hero MotoCorp","Automobile"],
+  ["MARUTI.NS","Maruti Suzuki","Automobile"],
+  ["TATAMOTORS.NS","Tata Motors","Automobile"],
+  ["EICHERMOT.NS","Eicher Motors","Automobile"],
+  ["M&M.NS","Mahindra & Mahindra","Automobile"],
+  ["SUNPHARMA.NS","Sun Pharmaceutical","Pharma"],
+  ["DRREDDY.NS","Dr Reddy's Laboratories","Pharma"],
+  ["CIPLA.NS","Cipla","Pharma"],
+  ["DIVISLAB.NS","Divi's Laboratories","Pharma"],
+  ["TATASTEEL.NS","Tata Steel","Metals"],
+  ["HINDALCO.NS","Hindalco Industries","Metals"],
+  ["JSWSTEEL.NS","JSW Steel","Metals"],
+  ["ULTRACEMCO.NS","UltraTech Cement","Cement"],
+  ["GRASIM.NS","Grasim Industries","Cement"],
+  ["ASIANPAINT.NS","Asian Paints","Consumer"],
+  ["TITAN.NS","Titan Company","Consumer"],
+  ["TRENT.NS","Trent","Consumer"],
+  ["APOLLOHOSP.NS","Apollo Hospitals","Healthcare"],
+  ["HDFCLIFE.NS","HDFC Life Insurance","Insurance"],
+  ["SBILIFE.NS","SBI Life Insurance","Insurance"],
+  ["BAJFINANCE.NS","Bajaj Finance","Financial Services"],
+  ["BAJAJFINSV.NS","Bajaj Finserv","Financial Services"],
+  ["SHRIRAMFIN.NS","Shriram Finance","Financial Services"],
+  ["LT.NS","Larsen & Toubro","Infrastructure"],
+  ["ADANIPORTS.NS","Adani Ports","Infrastructure"],
+  ["ADANIENT.NS","Adani Enterprises","Conglomerate"],
+];
+
+let orderSide = "BUY";
+let liveSignals = [];
+let availableCapital = 100000;
+
+/* ── Build stock dropdown ── */
+function buildDropdown(){
+  const sel = document.getElementById("order-ticker");
+  STOCK_UNIVERSE.forEach(([ticker, name, sector]) => {
+    const opt = document.createElement("option");
+    opt.value = ticker;
+    opt.textContent = `${ticker.replace(".NS","")} — ${name} (${sector})`;
+    sel.appendChild(opt);
+  });
+}
+
+function setOrderSide(side){
+  orderSide = side;
+  document.getElementById("btn-buy-tab").className  = "order-type-btn" + (side==="BUY"  ? " buy-active"  : "");
+  document.getElementById("btn-sell-tab").className = "order-type-btn" + (side==="SELL" ? " sell-active" : "");
+  document.getElementById("btn-place-order").textContent = `Place ${side} Order`;
+  document.getElementById("btn-place-order").className   = "btn btn-lg btn-block " + (side==="BUY" ? "btn-primary" : "btn-danger");
+}
+
+function fillFromSignal(ticker, price, conf, regime){
+  document.getElementById("order-ticker").value = ticker;
+  document.getElementById("order-price").value  = price || "";
+  setOrderSide("BUY");
+  onTickerChange(price, conf, regime);
+  document.getElementById("order-shares").focus();
+}
+
+function onTickerChange(price, conf, regime){
+  const ticker = document.getElementById("order-ticker").value;
+  const row    = document.getElementById("live-price-row");
+  if(!ticker){ row.style.display="none"; return; }
+
+  // Try to get price from cached signals first
+  const sig = liveSignals.find(s => s.ticker === ticker);
+  const p   = price || (sig && sig.price) || null;
+  const c   = conf  || (sig && sig.confidence) || null;
+  const r   = regime|| (sig && sig.regime)     || null;
+
+  if(p){
+    row.style.display = "block";
+    document.getElementById("live-price-val").textContent = "₹" + Number(p).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const regIcon = r==="BULL"?"🟢":r==="BEAR"?"🔴":"🟡";
+    document.getElementById("live-regime").textContent = r ? `${regIcon} ${r} regime` : "";
+    document.getElementById("live-conf").textContent   = c ? `${(c*100).toFixed(1)}% confidence` : "";
+  } else {
+    row.style.display = "none";
+  }
+  updateOrderSummary();
+}
+
+function updateOrderSummary(){
+  const ticker  = document.getElementById("order-ticker").value;
+  const shares  = parseInt(document.getElementById("order-shares").value)||0;
+  const priceIn = parseFloat(document.getElementById("order-price").value)||null;
+  const sig     = liveSignals.find(s=>s.ticker===ticker);
+  const price   = priceIn || (sig&&sig.price)||null;
+  const sumEl   = document.getElementById("order-summary");
+
+  if(!shares || shares < 1 || !ticker){ sumEl.style.display="none"; return; }
+  sumEl.style.display = "block";
+
+  const value = price ? shares * price : null;
+  document.getElementById("os-value").textContent     = value ? "₹"+value.toLocaleString("en-IN",{maximumFractionDigits:0}) : "—";
+  document.getElementById("os-remaining").textContent = (value && orderSide==="BUY")
+    ? "₹"+(availableCapital-value).toLocaleString("en-IN",{maximumFractionDigits:0})
+    : "₹"+availableCapital.toLocaleString("en-IN",{maximumFractionDigits:0});
+}
+
+async function placeOrder(){
+  const ticker  = document.getElementById("order-ticker").value;
+  const shares  = parseInt(document.getElementById("order-shares").value)||0;
+  const price   = parseFloat(document.getElementById("order-price").value)||null;
+  const errEl   = document.getElementById("order-err");
+  errEl.textContent = "";
+
+  if(!ticker){ errEl.textContent = "Please select a stock."; return; }
+  if(!shares || shares < 1){ errEl.textContent = "Enter a valid quantity (min 1)."; return; }
+  if(!QuantAPI.getToken()){ errEl.textContent = "Sign in to place paper trades."; return; }
+
+  const btn = document.getElementById("btn-place-order");
+  btn.disabled = true; btn.textContent = "Placing…";
+
+  try{
+    const fn  = orderSide==="BUY" ? QuantAPI.paperBuy : QuantAPI.paperSell;
+    const res = await fn(ticker, shares, price);
+    if(!res.success){ errEl.textContent = res.error||"Order failed."; return; }
+
+    const pnlStr = res.pnl != null ? ` (P&L: ${res.pnl>=0?"+":""}₹${Math.abs(res.pnl).toLocaleString("en-IN",{maximumFractionDigits:0})})` : "";
+    toast(`${orderSide} ${shares}× ${ticker.replace(".NS","")} placed${pnlStr}`);
+
+    document.getElementById("order-shares").value = "";
+    document.getElementById("order-price").value  = "";
+    document.getElementById("order-summary").style.display = "none";
+    loadAll();
+  }catch(e){
+    errEl.textContent = e.message;
+  }finally{
+    btn.disabled = false;
+    setOrderSide(orderSide);
+  }
+}
+
+/* ── Load positions ── */
+async function loadPositions(){
+  const mount = document.getElementById("positions-mount");
+  try{
+    if(!QuantAPI.getToken()){ mount.innerHTML=`<div class="empty-state" style="padding:20px"><div class="ic">🔒</div>Sign in to track positions<div class="cta"><a class="btn btn-primary" href="login.html">Sign in</a></div></div>`; return; }
+    const d = await QuantAPI.paperPositions();
+    availableCapital = d.capital||100000;
+    document.getElementById("pt-capital").textContent = "₹"+Number(availableCapital).toLocaleString("en-IN",{maximumFractionDigits:0});
+    document.getElementById("pt-open").textContent    = (d.positions||[]).length;
+
+    if(!d.positions||!d.positions.length){
+      mount.innerHTML=`<div class="empty-state" style="padding:20px"><div class="ic">📭</div>No open positions<div style="font-size:12px;color:var(--muted);margin-top:6px">Use the order panel to open a position.</div></div>`;
+      document.getElementById("open-count").textContent="";
+      return;
+    }
+
+    document.getElementById("open-count").textContent = `${d.positions.length} open`;
+    mount.innerHTML = `<table>
+      <thead><tr>
+        <th>Stock</th><th>Shares</th><th class="num">Entry</th><th>Date</th><th></th>
+      </tr></thead>
+      <tbody>${d.positions.map(p=>`
+        <tr>
+          <td><strong>${p.ticker.replace(".NS","")}</strong></td>
+          <td>${p.shares}</td>
+          <td class="num">₹${Number(p.price||0).toLocaleString("en-IN",{maximumFractionDigits:2})}</td>
+          <td class="muted" style="font-size:11px">${p.date||""}</td>
+          <td>
+            <button class="btn btn-danger" style="padding:3px 9px;font-size:11px"
+              onclick="quickSell('${p.ticker}',${p.shares})">SELL</button>
+          </td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+  }catch(e){
+    mount.innerHTML=`<div class="empty-state" style="padding:18px"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+async function loadHistory(){
+  const mount = document.getElementById("history-mount");
+  try{
+    if(!QuantAPI.getToken()){ mount.innerHTML=`<div class="empty-state" style="padding:18px"><div class="ic">🔒</div>Sign in to see history</div>`; return; }
+    const d = await QuantAPI.paperHistory(30);
+    document.getElementById("pt-pnl").textContent = (d.total_pnl>=0?"+":"")+Number(d.total_pnl||0).toLocaleString("en-IN",{maximumFractionDigits:0});
+    document.getElementById("pt-pnl").style.color = d.total_pnl>=0?"var(--green)":"var(--red)";
+    document.getElementById("pt-wr").textContent  = (d.win_rate||0).toFixed(0)+"%";
+
+    if(!d.trades||!d.trades.length){
+      mount.innerHTML=`<div class="empty-state" style="padding:18px"><div class="ic">📭</div>No closed trades yet</div>`; return;
+    }
+    mount.innerHTML=`<table>
+      <thead><tr><th>Stock</th><th class="num">Entry</th><th class="num">P&L</th><th>Date</th></tr></thead>
+      <tbody>${d.trades.map(t=>{
+        const pnl = t.pnl||0;
+        return `<tr>
+          <td><strong>${t.ticker.replace(".NS","")}</strong></td>
+          <td class="num">₹${Number(t.price||0).toLocaleString("en-IN",{maximumFractionDigits:2})}</td>
+          <td class="num" style="color:${pnl>=0?"var(--green)":"var(--red)"}">${pnl>=0?"+":""}₹${Math.abs(pnl).toLocaleString("en-IN",{maximumFractionDigits:0})}</td>
+          <td class="muted" style="font-size:11px">${t.date||""}</td>
+        </tr>`;
+      }).join("")}
+      </tbody>
+    </table>`;
+  }catch(e){
+    mount.innerHTML=`<div class="empty-state" style="padding:18px"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+async function loadQuickSignals(){
+  const mount = document.getElementById("quick-signals");
+  try{
+    const data   = await SignalsCache.get(false);
+    liveSignals  = data.results||[];
+    const buys   = liveSignals.filter(s=>s.signal==="BUY");
+    if(!buys.length){
+      mount.innerHTML=`<div class="empty-state" style="padding:18px"><div class="ic">💤</div>No BUY signals right now</div>`; return;
+    }
+    mount.innerHTML = buys.map(s=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 15px;border-bottom:1px solid var(--border);cursor:pointer"
+           onclick="fillFromSignal('${s.ticker}',${s.price},${s.confidence},'${s.regime||"SIDEWAYS"}')"
+           title="Click to auto-fill order form">
+        <div>
+          <strong style="font-family:var(--font-mono)">${s.ticker.replace(".NS","")}</strong>
+          <div style="font-size:10.5px;color:var(--muted)">${s.name||""} · ${s.sector||""}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--font-mono);font-size:14px">₹${Number(s.price||0).toLocaleString("en-IN",{maximumFractionDigits:2})}</div>
+          <div style="color:var(--green);font-size:11px;font-weight:700">${(s.confidence*100).toFixed(1)}%</div>
+        </div>
+      </div>`).join("");
+  }catch(e){
+    mount.innerHTML=`<div class="empty-state" style="padding:18px"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+async function quickSell(ticker, shares){
+  if(!confirm(`SELL ${shares}× ${ticker.replace(".NS","")} at market price?`)) return;
+  try{
+    const res = await QuantAPI.paperSell(ticker, shares, null);
+    if(res.success){
+      const pnl = res.pnl;
+      toast(`Sold ${ticker.replace(".NS","")} · P&L: ${pnl>=0?"+":""}₹${Math.abs(pnl).toLocaleString("en-IN",{maximumFractionDigits:0})}`);
+      loadAll();
+    } else {
+      toast(res.error||"Sell failed", "err");
+    }
+  }catch(e){ toast(e.message,"err"); }
+}
+
+function confirmReset(){
+  document.getElementById("reset-modal").classList.remove("hidden");
+}
+async function doReset(){
+  document.getElementById("reset-modal").classList.add("hidden");
+  try{
+    await QuantAPI.paperReset();
+    toast("Portfolio reset to ₹1,00,000");
+    loadAll();
+  }catch(e){ toast(e.message,"err"); }
+}
+
+function loadAll(){
+  loadPositions();
+  loadHistory();
+  loadQuickSignals();
+}
+
+buildDropdown();
+loadAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Overview — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="index">
+
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+  <!-- Page header -->
+  <div class="page-head">
+    <div>
+      <div class="page-title">Overview</div>
+      <div class="page-sub">Live ensemble signals · Nifty 50 · <span id="hdr-time">—</span></div>
+    </div>
+    <button class="btn btn-primary" id="btn-refresh">⟳ Refresh scan</button>
+  </div>
+
+  <!-- Market regime banner -->
+  <div class="regime-banner" id="regime-banner" style="display:none">
+    <div class="regime-seg">
+      <div class="regime-item"><div class="r-lbl">Market Regime</div><div class="r-val" id="reg-overall">—</div></div>
+    </div>
+    <div class="regime-seg">
+      <div class="regime-item"><div class="r-lbl">🟢 Bull</div><div class="r-val regime-bull" id="reg-bull">—</div></div>
+      <div class="regime-item"><div class="r-lbl">🟡 Sideways</div><div class="r-val regime-side" id="reg-side">—</div></div>
+      <div class="regime-item"><div class="r-lbl">🔴 Bear</div><div class="r-val regime-bear" id="reg-bear">—</div></div>
+    </div>
+    <div class="regime-seg">
+      <div class="regime-item"><div class="r-lbl">Avg Score</div><div class="r-val" id="reg-score">—</div></div>
+      <div class="regime-item" style="margin-left:12px"><div class="r-lbl">Threshold</div><div class="r-val" id="reg-thresh">—</div></div>
+    </div>
+  </div>
+
+  <!-- Stats bar -->
+  <div class="stat-grid" id="stat-grid">
+    <div class="stat-card"><div class="stat-label">Stocks Scanned</div><div class="stat-value num" id="s-total">—</div></div>
+    <div class="stat-card"><div class="stat-label">BUY Signals</div><div class="stat-value num up" id="s-buy">—</div></div>
+    <div class="stat-card"><div class="stat-label">Active Sectors</div><div class="stat-value num" id="s-sectors">—</div></div>
+    <div class="stat-card"><div class="stat-label">Paper Capital</div><div class="stat-value num" id="s-capital">—</div></div>
+  </div>
+
+  <!-- BUY signal cards -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">🟢 BUY Signals Today</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="muted" id="buy-count" style="font-size:12px"></span>
+        <a class="btn" href="signals.html" style="padding:4px 10px;font-size:11px">All signals →</a>
+      </div>
+    </div>
+    <div class="card-body" id="buy-cards">
+      <div class="loading-row"><div class="spinner"></div>Running ensemble model across 50 stocks…</div>
+    </div>
+  </div>
+
+  <!-- Secondary row: Tail Risk + Sector Pulse + FII/DII -->
+  <div class="grid-3" style="align-items:start">
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🛡️ Tail Risk Index
+          <span class="tip" data-tip="0–100 composite of volatility, drawdown depth, and correlation across the Nifty 50.">i</span>
+        </div>
+        <a class="btn" href="risk.html" style="padding:4px 10px;font-size:11px">Risk →</a>
+      </div>
+      <div class="card-body" id="tri-mount"><div class="loading-row"><div class="spinner"></div>Scanning…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">🗺️ Sector Pulse</div></div>
+      <div class="card-body" id="heatmap"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🏦 FII / DII Flows</div>
+        <button class="fii-refresh-btn" id="fii-refresh-btn" title="Refresh from NSE">↻</button>
+      </div>
+      <div class="card-body" id="fii-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+
+  </div>
+
+  <!-- Paper Portfolio + Drawdown -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head"><div class="card-title">💼 Paper Portfolio</div><a class="btn" href="portfolio.html" style="padding:4px 10px;font-size:11px">Details →</a></div>
+      <div class="card-body" id="paper-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">📉 Drawdown Recovery</div></div>
+      <div class="card-body" id="recovery-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script src="assets/gauge.js"></script>
+<script>
+let SIGNALS = [];
+let WATCHLIST = new Set();
+
+async function loadWatchlistSet(){
+  if(!QuantAPI.getToken()){ WATCHLIST = new Set(); return; }
+  try{ const d = await QuantAPI.watchlist(); WATCHLIST = new Set((d.watchlist||[]).map(x=>x.ticker)); }
+  catch{ WATCHLIST = new Set(); }
+}
+
+async function toggleWatch(ticker, btn){
+  if(!QuantAPI.getToken()){ toast("Sign in to use your watchlist.", "err"); return; }
+  const saved = WATCHLIST.has(ticker);
+  try{
+    if(saved){ await QuantAPI.removeWatch(ticker); WATCHLIST.delete(ticker); toast(`${tickerShort(ticker)} removed`); }
+    else{ await QuantAPI.addWatch(ticker); WATCHLIST.add(ticker); toast(`${tickerShort(ticker)} added to watchlist`); }
+    btn.classList.toggle("on", !saved);
+    btn.textContent = WATCHLIST.has(ticker) ? "★" : "☆";
+  }catch(e){ toast(e.message, "err"); }
+}
+
+function pickCard(s){
+  const saved  = WATCHLIST.has(s.ticker);
+  const ind    = s.individual || {};
+  const pct    = v => v!=null ? `${Math.round(v*100)}%` : "—";
+  const agCls  = s.agreement === "strong" ? "agree-strong" : s.agreement === "weak" ? "agree-weak" : "agree-moderate";
+  const regCls = s.regime === "BULL" ? "regime-bull" : s.regime === "BEAR" ? "regime-bear" : "regime-side";
+  const regIcon= s.regime === "BULL" ? "🟢" : s.regime === "BEAR" ? "🔴" : "🟡";
+
+  return `<div class="sig-card" onclick="location.href='stock.html?ticker=${tickerShort(s.ticker)}'">
+    <button class="wl-star ${saved?'on':''}" onclick="event.stopPropagation();toggleWatch('${s.ticker}',this)" title="Watchlist">${saved?'★':'☆'}</button>
+    <div class="sig-card-top">
+      <span class="sig-card-ticker">${tickerShort(s.ticker)}</span>
+      <span class="sig-card-regime ${regCls}">${regIcon} ${s.regime||''}</span>
+    </div>
+    <div class="sig-card-top" style="margin-bottom:4px">
+      <span class="sig-card-sector">${s.sector||''} · ${(s.name||'').slice(0,22)}</span>
+    </div>
+    <div class="sig-card-mid">
+      <span class="sig-card-price">₹${fmtNum(s.price)}</span>
+      <span class="sig-card-conf">${fmtPct(s.confidence)}</span>
+    </div>
+    <div class="sig-card-indicators">
+      <span>RSI <b>${s.rsi!=null?s.rsi:'—'}</b></span>
+      <span>MACD <b>${s.macd!=null?Number(s.macd).toFixed(2):'—'}</b></span>
+      <span>Vol <b>${s.volume_ratio!=null?Number(s.volume_ratio).toFixed(1)+'×':'—'}</b></span>
+    </div>
+    <div class="sig-card-agree">
+      <span class="${agCls}">${s.agreement||'ensemble'} agreement</span>
+      ${ind.RF!=null?`<span class="muted">RF ${pct(ind.RF)}</span>`:''}
+      ${ind.XGBoost!=null?`<span class="muted">XGB ${pct(ind.XGBoost)}</span>`:''}
+      ${(ind.SeqNN||ind.LSTM)!=null?`<span class="muted">Seq ${pct(ind.SeqNN||ind.LSTM)}</span>`:''}
+    </div>
+  </div>`;
+}
+
+function renderHeatmap(signals){
+  const bySector = {};
+  signals.forEach(s=>{
+    const sec = s.sector||"Other";
+    bySector[sec] = bySector[sec]||{total:0,buy:0};
+    bySector[sec].total++;
+    if(s.signal==="BUY") bySector[sec].buy++;
+  });
+  const entries = Object.entries(bySector).sort((a,b)=>b[1].buy-a[1].buy);
+  document.getElementById("heatmap").innerHTML =
+    `<div style="display:flex;flex-direction:column;gap:8px">` +
+    entries.map(([sec,v])=>{
+      const pct = v.total ? v.buy/v.total : 0;
+      const color = pct>0.5?"var(--green)":pct>0.15?"var(--amber)":"var(--muted)";
+      return `<div style="display:flex;align-items:center;gap:10px;font-size:12.5px">
+        <span style="width:120px;color:var(--text-dim);flex-shrink:0">${sec}</span>
+        <div style="flex:1;background:var(--panel-2);border-radius:3px;height:6px;overflow:hidden">
+          <div style="height:100%;width:${Math.max(pct*100,3)}%;background:${color};border-radius:3px"></div>
+        </div>
+        <span style="width:50px;text-align:right;font-family:var(--font-mono);color:${color}">${v.buy}/${v.total}</span>
+      </div>`;
+    }).join("") + `</div>`;
+}
+
+function renderRegimeBanner(mr){
+  if(!mr) return;
+  const banner = document.getElementById("regime-banner");
+  banner.style.display = "flex";
+  const ov = document.getElementById("reg-overall");
+  const regCls = mr.overall_regime==="BULL"?"regime-bull":mr.overall_regime==="BEAR"?"regime-bear":"regime-side";
+  const regIcon= mr.overall_regime==="BULL"?"🟢":mr.overall_regime==="BEAR"?"🔴":"🟡";
+  ov.textContent = `${regIcon} ${mr.overall_regime}`;
+  ov.className   = "r-val " + regCls;
+  document.getElementById("reg-bull").textContent  = mr.bull_count     ?? 0;
+  document.getElementById("reg-side").textContent  = mr.sideways_count ?? 0;
+  document.getElementById("reg-bear").textContent  = mr.bear_count     ?? 0;
+  document.getElementById("reg-score").textContent = (mr.avg_score>=0?"+":"")+((mr.avg_score||0).toFixed(3));
+  document.getElementById("reg-thresh").textContent= ((mr.threshold||0.58)*100).toFixed(0)+"%";
+}
+
+async function loadOverview(force=false){
+  document.getElementById("buy-cards").innerHTML = `<div class="loading-row"><div class="spinner"></div>Running ensemble model…</div>`;
+  try{
+    const data = await SignalsCache.get(force);
+    SIGNALS = data.results||[];
+    await loadWatchlistSet();
+
+    document.getElementById("s-total").textContent   = fmtInt(data.total_stocks);
+    document.getElementById("s-buy").textContent     = fmtInt(data.buy_signals);
+    const sectors = new Set(SIGNALS.map(s=>s.sector).filter(Boolean));
+    document.getElementById("s-sectors").textContent = sectors.size;
+    document.getElementById("hdr-time").textContent  = "Last scan " + new Date(data.scan_time).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+
+    renderTape(SIGNALS);
+    refreshCmdkTickers(SIGNALS);
+    if(data.market_regime) renderRegimeBanner(data.market_regime);
+
+    const buys = SIGNALS.filter(s=>s.signal==="BUY");
+    document.getElementById("buy-count").textContent = `${buys.length} signal${buys.length!==1?"s":""}`;
+    document.getElementById("buy-cards").innerHTML = buys.length
+      ? `<div class="signal-cards">${buys.map(pickCard).join("")}</div>`
+      : `<div class="empty-state"><div class="ic">💤</div>No BUY signals right now — the ensemble is staying in cash.<div class="cta"><a class="btn" href="signals.html">View all 50 stocks →</a></div></div>`;
+
+    renderHeatmap(SIGNALS);
+  }catch(e){
+    document.getElementById("buy-cards").innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}<div class="cta"><button class="btn" onclick="loadOverview(true)">Retry</button></div></div>`;
+    toast(e.message, "err");
+  }
+}
+
+async function loadTailRisk(){
+  const mount = document.getElementById("tri-mount");
+  try{
+    const d = await QuantAPI.tailRisk();
+
+    // Handle timeout (first call, cache warming)
+    if(d.level === "TIMEOUT"){
+      mount.innerHTML = `<div class="empty-state" style="padding:16px">
+        <div class="ic">⏳</div>
+        <div style="font-size:12px">TRI is computing in the background.</div>
+        <div style="color:var(--muted);font-size:11px;margin-top:4px">${d.recommendation}</div>
+        <div class="cta"><button class="btn" onclick="setTimeout(loadTailRisk,5000)">Auto-retry in 5s</button></div>
+      </div>`;
+      setTimeout(loadTailRisk, 6000);   // auto retry
+      return;
+    }
+
+    // Handle error (e.g. no pipeline data)
+    if(d.error || d.tri === null || d.tri === undefined){
+      const isNoDB = d.error && (d.error.includes("not found") || d.error.includes("not enough") || d.error.includes("DB read"));
+      mount.innerHTML = `<div class="empty-state" style="padding:16px">
+        <div class="ic">${isNoDB ? "📊" : "⚠️"}</div>
+        <div style="font-size:12px">${d.recommendation || d.error}</div>
+        ${isNoDB ? `<div style="margin-top:8px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);background:var(--panel-2);padding:5px 8px;border-radius:5px">python pipeline.py</div>` : ""}
+        <div class="cta" style="margin-top:10px"><button class="btn" onclick="loadTailRisk()">Retry</button></div>
+      </div>`;
+      return;
+    }
+
+    // ── Success ──
+    mount.innerHTML = `<div id="tri-gauge"></div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:5px;text-align:center">${d.recommendation||""}</div>
+      ${d.from_cache ? '<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:2px">Cached result · refreshes every 30 min</div>' : ''}`;
+
+    renderGauge(document.getElementById("tri-gauge"), {
+      value: d.tri,
+      label: "TAIL RISK INDEX",
+      zones:[
+        { upTo:25,  color:"--green",   label:"LOW"  },
+        { upTo:50,  color:"--amber",   label:"MOD"  },
+        { upTo:75,  color:"--accent2", label:"ELEV" },
+        { upTo:100, color:"--red",     label: d.halt_trading ? "HALT" : "HIGH" },
+      ]
+    });
+
+    // Show component breakdown below gauge
+    if(d.components && Object.keys(d.components).length){
+      const compHtml = Object.entries(d.components).map(([k,v])=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:11.5px">
+          <span class="muted" style="text-transform:capitalize">${k.replace(/_/g," ")}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:50px;height:4px;background:var(--panel-2);border-radius:2px;overflow:hidden">
+              <div style="height:100%;width:${v}%;background:${v>66?'var(--red)':v>33?'var(--amber)':'var(--green)'}"></div>
+            </div>
+            <span class="mono" style="width:24px;text-align:right">${Math.round(v)}</span>
+          </div>
+        </div>`).join("");
+      mount.insertAdjacentHTML("beforeend",
+        `<div style="margin-top:12px">${compHtml}</div>`);
+    }
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state" style="padding:16px">
+      <div class="ic">⚠️</div>
+      <div style="font-size:12px">${e.message}</div>
+      <div class="cta"><button class="btn" onclick="loadTailRisk()">Retry</button></div>
+    </div>`;
+  }
+}
+
+async function loadPaperPortfolio(){
+  const mount = document.getElementById("paper-mount");
+  try{
+    const d = await QuantAPI.paperPortfolio();
+    document.getElementById("s-capital").textContent = "₹"+fmtNum(d.capital,0);
+    const rows = [
+      ["Capital",       "₹"+fmtNum(d.capital,0)],
+      ["Open trades",   fmtInt(d.open_trades)],
+      ["Closed trades", fmtInt(d.closed_trades)],
+      ["Since",         d.start_date||"—"],
+    ];
+    mount.innerHTML = rows.map(([l,v])=>
+      `<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px">
+        <span class="muted">${l}</span><span class="mono">${v}</span></div>`
+    ).join("");
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state" style="padding:16px"><div class="ic">—</div>${e.message}</div>`;
+  }
+}
+
+async function loadRecovery(){
+  const mount = document.getElementById("recovery-mount");
+  try{
+    const d = await QuantAPI.recoveryStatus();
+    const keys = Object.keys(d).filter(k=>!["error"].includes(k)).slice(0,6);
+    mount.innerHTML = keys.map(k=>`
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px">
+        <span class="muted">${k.replace(/_/g," ")}</span>
+        <span class="mono">${typeof d[k]==="number"?Number.isInteger(d[k])?d[k]:d[k].toFixed(2):String(d[k]??"—")}</span>
+      </div>`).join("");
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state" style="padding:16px"><div class="ic">${e.timeout?"⏳":"⚠️"}</div>${e.message}<div class="cta"><button class="btn" onclick="loadRecovery()">Retry</button></div></div>`;
+  }
+}
+
+async function loadFiiDii(){
+  const mount = document.getElementById("fii-mount");
+  try{
+    const d = await QuantAPI.fiiDii(8);
+    if(!d.data||!d.data.length){
+      mount.innerHTML = `<div class="empty-state" style="padding:12px"><div class="ic">🏦</div>No FII/DII data yet.<br><span class="mono" style="font-size:11px">python fetch_fii_dii.py</span></div>`;
+      return;
+    }
+    const sc = d.signal||"NEUTRAL";
+    const sigColor = sc.includes("BULL")?"var(--green)":sc.includes("BEAR")?"var(--red)":"var(--amber)";
+    const modPct = ((d.modifier-1)*100).toFixed(1);
+    let html = `<div class="fii-signal-strip">
+      <div class="fii-sig-item"><div class="sig-lbl">Signal</div><div class="sig-val" style="color:${sigColor}">${sc}</div></div>
+      <div class="fii-sig-item"><div class="sig-lbl">Modifier</div><div class="sig-val" style="color:${sigColor}">${modPct>=0?"+":""}${modPct}%</div></div>
+      <div class="fii-sig-item"><div class="sig-lbl">FII Net Avg</div><div class="sig-val" style="color:${(d.fii_net_avg||0)>=0?"var(--green)":"var(--red)"}">₹${Math.round(d.fii_net_avg||0).toLocaleString("en-IN")} Cr</div></div>
+    </div>`;
+    const maxNet = Math.max(...d.data.map(r=>Math.abs(r.fii_net||0)),1);
+    d.data.slice(0,7).forEach(r=>{
+      const net=r.fii_net||0, pct=Math.min(Math.abs(net)/maxNet*46,46);
+      const cls=net>=0?"pos":"neg";
+      html+=`<div class="flow-bar-row">
+        <span class="flow-bar-date">${(r.date||"").slice(5)}</span>
+        <div class="flow-track">
+          ${net>=0?`<div class="flow-fill-buy" style="width:${pct}%"></div>`:`<div class="flow-fill-sell" style="width:${pct}%"></div>`}
+        </div>
+        <span class="flow-val ${cls}">${(net>=0?"+":"")+Math.round(net).toLocaleString("en-IN")}</span>
+      </div>`;
+    });
+    if(d.note) html+=`<div style="color:var(--amber);font-size:10px;font-family:var(--font-mono);margin-top:8px">⚠️ ${d.note}</div>`;
+    mount.innerHTML = html;
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state" style="padding:12px"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+document.getElementById("btn-refresh").onclick = ()=>loadOverview(true);
+document.getElementById("fii-refresh-btn").onclick = async ()=>{
+  try{ await QuantAPI.fiiDiiRefresh(); toast("FII/DII data refreshed"); loadFiiDii(); }
+  catch(e){ toast(e.message,"err"); }
+};
+
+loadOverview();
+loadTailRisk();
+loadPaperPortfolio();
+loadRecovery();
+loadFiiDii();
+</script>
+</body>
+</html>

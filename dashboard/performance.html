@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Performance — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="performance">
+
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+  <div class="page-head">
+    <div>
+      <div class="page-title">Performance</div>
+      <div class="page-sub">Platform-wide paper-trading track record, broken down every way that matters</div>
+    </div>
+    <button class="btn btn-primary" id="btn-refresh">⟳ Refresh</button>
+  </div>
+
+  <div id="perf-mount"><div class="loading-row"><div class="spinner"></div>Crunching trade history…</div></div>
+
+</main>
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script>
+function drawLine(mountEl, values, baseline){
+  mountEl.innerHTML = "";
+  const canvas = document.createElement("canvas");
+  canvas.style.width="100%"; canvas.style.height="200px"; canvas.style.display="block";
+  mountEl.appendChild(canvas);
+  const dpr = window.devicePixelRatio||1;
+  const rect = mountEl.getBoundingClientRect();
+  const w = rect.width, h = 200;
+  canvas.width = w*dpr; canvas.height = h*dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const css = getComputedStyle(document.documentElement);
+  const col = v => css.getPropertyValue(v).trim();
+  const padL=64, padR=14, padT=14, padB=22;
+  const plotW=w-padL-padR, plotH=h-padT-padB;
+  const min = Math.min(...values, baseline), max = Math.max(...values, baseline);
+  const xAt = i => padL + (i/(values.length-1||1))*plotW;
+  const yAt = v => padT + plotH - ((v-min)/((max-min)||1))*plotH;
+
+  ctx.strokeStyle = col("--border"); ctx.setLineDash([3,3]); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL, yAt(baseline)); ctx.lineTo(w-padR, yAt(baseline)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = col("--muted"); ctx.font="10.5px "+col("--font-mono");
+  ctx.fillText("₹"+Math.round(baseline).toLocaleString("en-IN"), 4, yAt(baseline)+3);
+  ctx.fillText("₹"+Math.round(max).toLocaleString("en-IN"), 4, yAt(max)+3);
+  ctx.fillText("₹"+Math.round(min).toLocaleString("en-IN"), 4, yAt(min)+3);
+
+  const up = values[values.length-1] >= baseline;
+  ctx.strokeStyle = up ? col("--green") : col("--red");
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((v,i)=> i===0 ? ctx.moveTo(xAt(i), yAt(v)) : ctx.lineTo(xAt(i), yAt(v)));
+  ctx.stroke();
+}
+
+function statCard(label, value, cls, tip){
+  const tipHtml = tip ? `<span class="tip" data-tip="${tip}" style="margin-left:5px">i</span>` : "";
+  return `<div class="stat-card"><div class="stat-label">${label}${tipHtml}</div><div class="stat-value num ${cls||""}">${value}</div></div>`;
+}
+
+function breakdownTable(title, obj, keyLabel){
+  const entries = Object.entries(obj||{});
+  if(!entries.length) return "";
+  return `<div class="card"><div class="card-head"><div class="card-title">${title}</div></div>
+    <div class="card-body"><div class="table-wrap"><table><thead><tr>
+      <th>${keyLabel}</th><th>Trades</th><th>Win Rate</th><th>Avg P&amp;L</th><th>Total P&amp;L</th>
+    </tr></thead><tbody>${entries.map(([k,v])=>`<tr>
+      <td><strong>${k}</strong></td>
+      <td class="num">${v.n_trades}</td>
+      <td class="num">${v.win_rate}%</td>
+      <td class="num ${v.avg_pnl>=0?'up':'down'}">₹${fmtNum(v.avg_pnl,0)}</td>
+      <td class="num ${v.total_pnl>=0?'up':'down'}">₹${fmtNum(v.total_pnl,0)}</td>
+    </tr>`).join("")}</tbody></table></div></div></div>`;
+}
+
+async function load(){
+  const mount = document.getElementById("perf-mount");
+  mount.innerHTML = `<div class="loading-row"><div class="spinner"></div>Crunching trade history…</div>`;
+  try{
+    const d = await QuantAPI.performance();
+    if(d.error){ mount.innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${d.error}</div>`; return; }
+    const m = d.metrics || {};
+    if(m.message){
+      mount.innerHTML = `<div class="empty-state"><div class="ic">📈</div>${m.message}
+        <div class="dim" style="margin-top:8px;font-size:12px">Capital ₹${fmtNum(m.capital,0)} · ${m.total_trades} total trades, ${m.open_trades} open</div></div>`;
+      return;
+    }
+    if(!m.total_trades){
+      mount.innerHTML = `<div class="empty-state"><div class="ic">📈</div>No trades recorded yet. Run <span class="mono">python paper_trade.py</span> to start building a track record.</div>`;
+      return;
+    }
+    const pnlCls = m.total_pnl>=0 ? "up" : "down";
+    mount.innerHTML = `
+      <div class="stat-grid">
+        ${statCard("Total P&amp;L", "₹"+fmtNum(m.total_pnl,0), pnlCls)}
+        ${statCard("Total Return", m.total_return_pct+"%", pnlCls)}
+        ${statCard("Win Rate", m.win_rate+"%")}
+        ${statCard("Profit Factor", m.profit_factor===Infinity||m.profit_factor>9999?"∞":m.profit_factor, "", "Gross profit ÷ gross loss. Above 1 means winners outweigh losers in rupee terms — higher is better.")}
+        ${statCard("Sharpe Ratio", m.sharpe_ratio, "", "Annualised return per unit of total volatility. Above 1 is decent, above 2 is strong for a retail strategy.")}
+        ${statCard("Sortino Ratio", m.sortino_ratio, "", "Like Sharpe, but only penalises downside volatility — ignores upside swings that Sharpe unfairly punishes.")}
+        ${statCard("Max Drawdown", m.max_drawdown+"%", "down", "The largest peak-to-trough drop in paper equity. Smaller (closer to 0%) is better.")}
+        ${statCard("Calmar Ratio", m.calmar_ratio, "", "Total return divided by max drawdown — return earned per unit of worst-case pain endured.")}
+        ${statCard("Expectancy / Trade", "₹"+fmtNum(m.expectancy,0), "", "Average rupee P&amp;L you'd expect per trade, across wins and losses, based on this track record.")}
+        ${statCard("Avg Hold", m.avg_hold_days+"d")}
+        ${statCard("Current Streak", `${m.current_streak} ${m.streak_type||""}`)}
+        ${statCard("Trades (closed/open)", `${m.closed_trades}/${m.open_trades}`)}
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">📈 Equity Curve</div></div>
+        <div class="card-body" id="equity-mount"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><div class="card-title">🏆 Best Trade</div></div>
+          <div class="card-body">
+            <div class="stat-value num up" style="font-size:22px">₹${fmtNum(m.best_trade.pnl,0)}</div>
+            <div class="dim" style="margin-top:4px">${tickerShort(m.best_trade.ticker)} · ${m.best_trade.pnl_pct}% · ${m.best_trade.date}</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">💥 Worst Trade</div></div>
+          <div class="card-body">
+            <div class="stat-value num down" style="font-size:22px">₹${fmtNum(m.worst_trade.pnl,0)}</div>
+            <div class="dim" style="margin-top:4px">${tickerShort(m.worst_trade.ticker)} · ${m.worst_trade.pnl_pct}% · ${m.worst_trade.date}</div>
+          </div>
+        </div>
+      </div>
+
+      ${breakdownTable("🏭 By Sector", d.by_sector, "Sector")}
+      ${breakdownTable("🎯 By Confidence Band", d.by_confidence, "Confidence")}
+      ${breakdownTable("🗓️ By Month", d.by_month, "Month")}
+    `;
+    if(m.equity_curve && m.equity_curve.length>1){
+      drawLine(document.getElementById("equity-mount"), m.equity_curve, m.equity_curve[0]);
+    }else{
+      document.getElementById("equity-mount").innerHTML = `<div class="empty-state"><div class="ic">📈</div>Not enough closed trades yet for a curve.</div>`;
+    }
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+document.getElementById("btn-refresh").onclick = load;
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<script>(function(){try{if(localStorage.getItem('qai_theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>System — QuantAI</title>
+<link rel="stylesheet" href="assets/theme.css"/>
+</head>
+<body data-page="system">
+
+<div id="shell-header"></div>
+<div id="shell-app">
+<main>
+
+  <div class="page-head">
+    <div>
+      <div class="page-title">System</div>
+      <div class="page-sub">Windows Task Scheduler run history and admin user management</div>
+    </div>
+    <button class="btn btn-primary" id="btn-refresh">⟳ Refresh</button>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">⏱️ Scheduler Runs</div></div>
+    <div class="card-body" id="sch-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">👥 Registered Users</div><span class="badge badge-admin">Admin only</span></div>
+    <div class="card-body" id="admin-mount"><div class="loading-row"><div class="spinner"></div>Loading…</div></div>
+  </div>
+
+</main>
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/shell.js"></script>
+<script>
+async function loadScheduler(){
+  const mount = document.getElementById("sch-mount");
+  try{
+    const d = await QuantAPI.schedulerStatus();
+    const logs = d.logs || [];
+    if(!logs.length){
+      mount.innerHTML = `<div class="empty-state"><div class="ic">⏱️</div>${d.message || "No scheduler runs recorded yet."}
+        <div class="dim" style="margin-top:8px;font-size:12px">Set up <span class="mono">run_paper_trade.bat</span> in Windows Task Scheduler — see README step 10.</div></div>`;
+      return;
+    }
+    mount.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Job</th><th>Status</th><th>Message</th><th>Ran at</th></tr></thead><tbody>
+      ${logs.map(l=>`<tr>
+        <td><strong>${l.job}</strong></td>
+        <td><span class="badge ${/ok|success|done/i.test(l.status)?'badge-buy':/fail|error/i.test(l.status)?'badge-sell':'badge-skip'}">${l.status}</span></td>
+        <td class="dim" style="font-size:12px">${l.message||""}</td>
+        <td class="muted" style="font-size:12px">${l.ran_at||""}</td>
+      </tr>`).join("")}
+    </tbody></table></div>`;
+  }catch(e){
+    mount.innerHTML = `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+async function loadAdmin(){
+  const mount = document.getElementById("admin-mount");
+  if(!requireAuth(mount, { message:"Sign in with an admin account to view registered users." })) return;
+  try{
+    const d = await QuantAPI.adminUsers();
+    const users = d.users || [];
+    mount.innerHTML = `<div class="muted" style="font-size:12px;margin-bottom:10px">${d.count} registered user${d.count!==1?"s":""}</div>
+      <div class="table-wrap"><table><thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead><tbody>
+      ${users.map(u=>`<tr>
+        <td class="num">${u.id}</td>
+        <td><strong>${u.username}</strong></td>
+        <td class="muted">${u.email}</td>
+        <td>${u.is_admin?'<span class="badge badge-admin">Admin</span>':'<span class="badge badge-skip">User</span>'}</td>
+        <td class="muted" style="font-size:12px">${(u.created_at||"").slice(0,19).replace("T"," ")}</td>
+      </tr>`).join("")}
+      </tbody></table></div>`;
+  }catch(e){
+    mount.innerHTML = e.status===403
+      ? `<div class="empty-state"><div class="ic">🔒</div>Your account isn't an admin.</div>`
+      : `<div class="empty-state"><div class="ic">⚠️</div>${e.message}</div>`;
+  }
+}
+
+document.getElementById("btn-refresh").onclick = () => { loadScheduler(); loadAdmin(); };
+loadScheduler();
+loadAdmin();
+</script>
+</body>
+</html>
