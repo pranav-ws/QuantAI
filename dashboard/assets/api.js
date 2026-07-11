@@ -1,11 +1,18 @@
 /* ============================================================
    QuantAI — API client
-   Talks to your local FastAPI backend (src/api.py, uvicorn on :8000).
-   Change the base URL below if you run the API somewhere else.
+   The dashboard is served by the same FastAPI app as the API
+   (see the StaticFiles mount at the bottom of src/api.py), so when
+   loaded over http(s) — locally via uvicorn, or on a host like Render —
+   API calls default to the same origin the page was loaded from and no
+   manual editing is needed here, ever again.
+   Opening an HTML file directly by double-click (file:// protocol) still
+   falls back to localhost:8000 for local development without a server.
+   Override by setting window.QUANTAI_API_BASE before this script loads.
    ============================================================ */
 
 const QuantAPI = (() => {
-  const BASE = window.QUANTAI_API_BASE || "http://127.0.0.1:8000";
+  const BASE = window.QUANTAI_API_BASE
+    || (location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8000");
 
   function getToken() { return sessionStorage.getItem("qai_token") || ""; }
   function getUser() {

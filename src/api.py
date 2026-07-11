@@ -7,6 +7,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from fastapi import FastAPI, HTTPException, Header, Depends# type: ignore
 from fastapi.middleware.cors import CORSMiddleware# type: ignore
+from fastapi.staticfiles import StaticFiles# type: ignore
 from pydantic import BaseModel# type: ignore
 from datetime import datetime, date# type: ignore
 import sqlite3, joblib, json, pandas as pd# type: ignore
@@ -109,8 +110,13 @@ def on_startup():
             pass
     threading.Thread(target=_warm_tri, daemon=True).start()
 
-@app.get("/")
+@app.get("/api/status")
 def root():
+    # Was @app.get("/") — moved here since "/" now serves the dashboard
+    # itself (see the StaticFiles mount at the bottom of this file), so
+    # visiting your deployed URL opens the dashboard directly instead of
+    # a JSON status blob. Nothing in the frontend called GET "/" for data,
+    # so this move is safe.
     cached = _cache_get("signals_all")
     return {
         "status"     : "QuantAI API running",
@@ -1592,3 +1598,17 @@ def get_performance():
         }
     except Exception as e:
         return {'error': str(e)}
+
+
+# ══════════════════════════════════════════════════════════
+#  Serve the dashboard itself from this same service
+# ══════════════════════════════════════════════════════════
+# This MUST be the last thing registered. Starlette matches routes in the
+# order they were added — every @app.get/@app.post above this already
+# claimed its exact path, so this mount only ever catches requests that
+# didn't match any of them (i.e. dashboard pages and static assets).
+# Mounting it at "/" means your deployed URL opens the dashboard directly
+# instead of a JSON status blob (that moved to /api/status above).
+_dashboard_dir = os.path.join(os.path.dirname(__file__), "..", "dashboard")
+if os.path.isdir(_dashboard_dir):
+    app.mount("/", StaticFiles(directory=_dashboard_dir, html=True), name="dashboard")
