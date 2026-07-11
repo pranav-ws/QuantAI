@@ -5,7 +5,7 @@ New in v4: Multi-user auth, watchlist, per-user portfolio, admin panel, schedule
 import os, time, math
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-from fastapi import FastAPI, HTTPException, Header, Depends# type: ignore
+from fastapi import FastAPI, HTTPException, Header, Depends, Request# type: ignore
 from fastapi.middleware.cors import CORSMiddleware# type: ignore
 from fastapi.staticfiles import StaticFiles# type: ignore
 from pydantic import BaseModel# type: ignore
@@ -1508,6 +1508,93 @@ def reset_paper_portfolio(user=Depends(get_current_user)):
     conn.execute("UPDATE user_portfolios SET capital=100000, peak=100000 WHERE user_id=?", (user,))
     conn.commit(); conn.close()
     return {"success": True, "capital": 100000}
+
+@app.post('/telegram/connect-link')
+def telegram_connect_link(user=Depends(get_current_user)):
+    """
+    Generates a one-time deep link that starts a chat with the QuantAI
+    Telegram bot. Opening it and hitting Start in Telegram links that
+    Telegram account to this QuantAI user — no manual chat_id copying.
+    """
+    bot_username = os.environ.get("TELEGRAM_BOT_USERNAME", "")
+    if not bot_username:
+        raise HTTPException(
+            500,
+            "TELEGRAM_BOT_USERNAME is not configured on the server. "
+            "Set it to your bot's @username (without the @) in your .env / "
+            "Render environment variables."
+        )
+    from src.user_db import create_telegram_link_token
+    token = create_telegram_link_token(user)
+    return {"deep_link": f"https://t.me/{bot_username}?start={token}"}
+
+
+@app.get('/telegram/status')
+def telegram_status(user=Depends(get_current_user)):
+    """Whether this user currently has a Telegram chat connected."""
+    from src.user_db import get_telegram_chat_id
+    chat_id = get_telegram_chat_id(user)
+    return {"connected": chat_id is not None}
+
+
+@app.post('/telegram/disconnect')
+def telegram_disconnect(user=Depends(get_current_user)):
+    """Removes this user's Telegram connection — they'll stop receiving alerts."""
+    from src.user_db import disconnect_telegram
+    disconnect_telegram(user)
+    return {"success": True}
+
+
+@app.post('/telegram/webhook')
+async def telegram_webhook(request: Request):
+    """
+    Telegram calls this URL directly (configure via setup_telegram_webhook.py
+    after deploying) whenever someone messages the bot. We only care about
+    "/start <token>" — everything else is ignored. This endpoint is public
+    by necessity (Telegram, not your users, calls it), so it does the
+    minimum possible: validate the token, attach the chat_id, done.
+    """
+    try:
+        update = await request.json()
+    except Exception:
+        return {"ok": True}   # never error back to Telegram — it'll just retry
+
+    message = update.get("message") or update.get("edited_message") or {}
+    text    = (message.get("text") or "").strip()
+    chat_id = (message.get("chat") or {}).get("id")
+
+    from src.alerts import _send_to
+
+    if not text.startswith("/start") or chat_id is None:
+        return {"ok": True}
+
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        _send_to(chat_id,
+                 "👋 Welcome to QuantAI! Please use the \"Add Telegram Bot\" "
+                 "button in your dashboard settings to connect your account "
+                 "— this link expired or wasn't a valid connection link.")
+        return {"ok": True}
+
+    token = parts[1].strip()
+    from src.user_db import resolve_telegram_link_token, set_telegram_chat_id
+    from src.auth import get_user_by_id
+    user_id = resolve_telegram_link_token(token)
+    if user_id is None:
+        _send_to(chat_id,
+                 "⚠️ This connection link is invalid or has expired. "
+                 "Generate a new one from your QuantAI dashboard settings.")
+        return {"ok": True}
+
+    set_telegram_chat_id(user_id, chat_id)
+    user_info = get_user_by_id(user_id)
+    username  = user_info["username"] if user_info else "there"
+    _send_to(chat_id,
+             f"✅ Connected! Hi {username}, you'll now receive QuantAI signal "
+             f"alerts, risk warnings, and daily summaries here. You can "
+             f"disconnect anytime from your dashboard settings.")
+    return {"ok": True}
+
 
 @app.get('/fii-dii')
 def get_fii_dii(days: int = 10):

@@ -1,309 +1,205 @@
-# QuantAI — AI Quant Trading Platform (Windows Edition)
+# QuantAI — Quant Trading Dashboard for NSE
 
-This package contains everything built across Phases 0–7 of the QuantAI
-project: data pipeline, feature engineering, ML model, backtester, risk
-manager, paper trading engine, FastAPI backend, and a live dashboard —
-all adapted to run on **Windows**.
+QuantAI is a self-hosted quantitative trading platform for NSE (India) equities. It combines an ensemble of ML models (Random Forest, XGBoost, sequence models, Transformer, RL agent) with rule-based signals, risk analytics, an options desk, and a paper-trading simulator — all served through a FastAPI backend and a lightweight HTML/JS dashboard.
 
----
-
-## 0. Prerequisites
-
-1. **Python 3.10 – 3.13** (recommended). Download from
-   [python.org/downloads](https://www.python.org/downloads/).
-   During install, **tick "Add Python to PATH"**.
-   > Avoid Python 3.14 for now — some libraries used here don't yet have
-   > pre-built Windows wheels for it.
-2. **VS Code** (optional but recommended) —
-   [code.visualstudio.com](https://code.visualstudio.com/)
-3. Internet connection (the scripts download live NSE stock data via
-   Yahoo Finance).
+> **Not financial advice.** QuantAI is a research and paper-trading tool. Nothing it outputs is a recommendation to buy or sell real securities.
 
 ---
 
-## 1. Unzip the project
+## Features
 
-Extract the ZIP anywhere, e.g. `C:\Users\<You>\QuantAI`.
-Open that folder in VS Code, or open a terminal (PowerShell / Command
-Prompt) and `cd` into it:
+| Page | What it does |
+|---|---|
+| **Signals** | Live BUY/SELL/HOLD signals for 50 NSE stocks, ranked by ensemble confidence |
+| **Stock detail** | Price chart, model breakdown (RF/XGBoost/SeqNN/Transformer/RL), news & sentiment, regime |
+| **Portfolio / Risk** | Tail Risk Index, correlation matrix, drawdown recovery, risk parity |
+| **Options Desk** | Live NSE chain where available, theoretical Black-Scholes chain as fallback, strategy builder, AI strategy suggestion, opportunity scanner |
+| **Paper Trade** | Simulated trading with ₹1,00,000 starting capital — no real money, no broker connection |
+| **Performance** | Win rate, P&L history, per-trade breakdown |
+| **System** | API health, scheduler status, cache status |
 
-```bat
-cd C:\Users\<You>\QuantAI
+---
+
+## Tech stack
+
+- **Backend:** FastAPI + Uvicorn, SQLite, scikit-learn, XGBoost, yfinance
+- **Frontend:** Static HTML/CSS/JS (no build step, no framework) — open directly in a browser or serve as static files
+- **Models:** Random Forest, XGBoost, a sequence model (SeqNN/LSTM), a Transformer, and a Q-learning RL agent, combined into a weighted ensemble
+
+---
+
+## Prerequisites
+
+- Python 3.10 – 3.13 (avoid 3.14 — some dependencies don't have Windows wheels for it yet)
+- Internet access (yfinance pulls live/historical NSE price data)
+- Git (only needed if you're pushing to GitHub / deploying)
+
+---
+
+## Quick start (local)
+
+```bash
+# 1. Clone and set up
+git clone <your-repo-url>
+cd QuantAI
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+pip install -r requirements.txt
+
+# 2. One-time setup — builds the price DB, trains core models, seeds sample data
+python pipeline.py
+python train_all_models.py
+python train_xgboost_all.py
+python seed_trades.py
+python create_admin.py       # creates your login — you'll be prompted for username/email/password
 ```
 
-Your folder should look like this:
+**Optional extra models** (not required — the dashboard works fine without them, it just shows "not trained" for whichever you skip):
+```bash
+python train_lstm_all.py          # SeqNN, ~10 min
+python train_transformer_all.py   # Transformer, ~10 min
+python train_rl_agent.py          # RL Agent, ~15 min
+python fetch_fii_dii.py           # FII/DII institutional flow data
+```
+
+**Every time you want to use it:**
+```bash
+python -m uvicorn src.api:app --reload --port 8000
+```
+Then just open **http://127.0.0.1:8000** in your browser — the dashboard loads directly from the same server, no separate file to open.
+
+Sanity checks if something looks off: `http://127.0.0.1:8000/api/status`, `/signals`, `/tail-risk`.
+
+---
+
+## Project structure
 
 ```
 QuantAI/
-├── data/                  (empty for now — gets filled by the pipeline)
-├── models/                (empty for now — gets filled by training)
-├── src/
-│   ├── __init__.py
-│   ├── database.py
-│   ├── data_collector.py
-│   ├── features.py
-│   ├── model.py
-│   ├── backtest.py
-│   ├── risk.py
-│   ├── paper_trader.py
-│   ├── api.py
-│   └── alerts.py
-├── day1.py
-├── day1_chart.py
-├── explore_features.py
-├── pipeline.py
-├── query_db.py
-├── train_model.py
-├── train_all_models.py
-├── run_backtest.py
-├── test_risk.py
-├── paper_trade.py
-├── dashboard.html
+├── src/                 # Backend: API, models, ensemble, risk, options, auth
+├── dashboard/           # Frontend: static HTML/CSS/JS pages
+│   └── assets/          # api.js (API client), shell.js, theme.css, charts
+├── data/                # SQLite DB + cached data (gitignored — generated locally)
+├── models/              # Trained .pkl model files (gitignored — generated locally)
+├── pipeline.py           # Builds the price database
+├── train_*.py             # Model training scripts
+├── create_admin.py        # Creates your first login
+├── seed_trades.py         # Seeds sample trade history for the Performance page
 ├── requirements.txt
-├── setup_windows.bat
-├── run_pipeline.bat
-├── run_train_all.bat
-├── start_api.bat
-├── open_dashboard.bat
-├── run_paper_trade.bat
-└── README.md  ← you are here
+├── render.yaml             # Render Blueprint config (see Deployment below)
+└── Procfile                 # Alternative start command for Render/Heroku-style hosts
 ```
 
 ---
 
-## 2. One-time setup — install everything
+## Deploying to Render
 
-Double-click **`setup_windows.bat`** (or run it from the terminal).
+The backend now serves the dashboard itself — visiting your Render URL opens the dashboard directly, no separate static site needed, and no manual editing of `api.js` required. One service, one link.
 
-This will:
-- Create a virtual environment in `venv\`
-- Activate it
-- Install every package from `requirements.txt`
-  (`yfinance`, `pandas`, `matplotlib`, `mplfinance`, `ta`, `scikit-learn`,
-  `joblib`, `fastapi`, `uvicorn`, `python-telegram-bot`, etc.)
+### Step 1 — Push to GitHub
 
-This takes a few minutes the first time. Leave the window open until you
-see **"Setup complete!"**.
+If you haven't already, get the project into a GitHub repo (VS Code's Source Control panel → Publish to GitHub is the easiest way). Make sure your `.gitignore` excludes `venv/`, `data/`, `models/`, and `.env` — you don't want a multi-GB venv or your local database in the repo.
 
-> **Manual alternative**, if you prefer doing it yourself in a terminal:
-> ```bat
-> python -m venv venv
-> venv\Scripts\activate
-> pip install -r requirements.txt
-> ```
-> Whenever you open a *new* terminal for this project, run
-> `venv\Scripts\activate` first — you'll see `(venv)` appear at the start
-> of the line when it's active.
+### Step 2 — Create the Render service
 
----
+This project already ships with a `render.yaml`, which Render can read automatically:
 
-## 3. Build your local stock database (Phase 1)
+1. Go to [render.com](https://render.com) → sign in → **New** → **Blueprint**.
+2. Connect your GitHub account and select your `QuantAI` repo.
+3. Render detects `render.yaml` and pre-fills everything:
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `uvicorn src.api:app --host 0.0.0.0 --port $PORT --workers 1`
+   - A persistent disk mounted at `/app/data` (1 GB) — this is what keeps your SQLite database alive across deploys/restarts, instead of it vanishing every time Render redeploys.
+   - An auto-generated `QUANTAI_SECRET` environment variable.
+4. Click **Apply** / **Create Blueprint**.
 
-Double-click **`run_pipeline.bat`** (or run `python pipeline.py` with the
-venv active).
+If you'd rather set it up manually instead of via Blueprint: **New → Web Service**, connect the repo, and fill in the same build/start commands yourself, then add a disk under the service's **Disks** tab (mount path `/app/data`, size 1 GB).
 
-This downloads ~4 years of daily OHLCV data for 10 Nifty 50 stocks
-(Reliance, TCS, HDFC Bank, Infosys, ICICI Bank, Hindustan Unilever, SBI,
-Bharti Airtel, ITC, Kotak Mahindra Bank) into `data/quantai.db`
-(a local SQLite database). Takes 1–2 minutes.
+> **Pick at least the Starter plan, not Free.** Two reasons: Render's Free tier spins your service down after 15 minutes of inactivity (bad for a dashboard you want available anytime — every cold start takes 30–60+ seconds), and Free tier doesn't include Shell access, which you need for the one-time setup in the next step.
 
-To verify it worked, run:
+### Step 3 — Run one-time setup on the live server
 
-```bat
-python query_db.py
-```
+Your Render disk starts empty — it doesn't have your price database or trained models yet. Run the same setup scripts you used locally, but on the Render server itself:
 
-You should see a table listing all 10 stocks with ~1,000+ rows each.
-
----
-
-## 4. Train the ML models (Phase 3)
-
-Double-click **`run_train_all.bat`** (or run `python train_all_models.py`).
-
-This builds 30+ technical-indicator features for every stock, trains a
-Random Forest classifier per stock to predict next-day UP/DOWN direction,
-and saves each model to `models/<TICKER>_rf_model.pkl`. Takes 1–2 minutes.
-
-You'll see an accuracy score per stock — anything **52%+** is a real
-tradeable edge in this context.
-
-> **Optional educational scripts** (run any time with `(venv)` active):
-> - `python day1.py` / `python day1_chart.py` — basic data fetch & candlestick chart
-> - `python explore_features.py` — visualize indicators for Reliance
-> - `python train_model.py` — train + chart a single model (Reliance)
-> - `python run_backtest.py` — backtest the Reliance model vs Buy & Hold
-> - `python test_risk.py` — demo the risk manager's position sizing
-
----
-
-## 5. Run a live paper-trading scan (Phase 6)
-
-```bat
-python paper_trade.py
-```
-
-This scans all 10 stocks **live** (current market data), runs each ML
-model, and prints a BUY/SKIP table. Any signal with confidence ≥ 58%
-gets sized by the risk manager and logged to:
-- `data/paper_capital.json` (current paper capital & start date)
-- `data/paper_trades.json` (trade log)
-
-Run this once a day after market close to get tomorrow's signals (see
-**Step 8** to automate this).
-
----
-
-## 6. Start the API server (Phase 7)
-
-Double-click **`start_api.bat`**.
-
-This starts the FastAPI backend at `http://127.0.0.1:8000`. **Keep this
-window open** — the dashboard needs it running.
-
-Test it by opening these in your browser:
-- `http://127.0.0.1:8000` — status check
-- `http://127.0.0.1:8000/signals` — live ML scan of all 10 stocks (JSON)
-- `http://127.0.0.1:8000/signal/INFY` — single-stock signal
-- `http://127.0.0.1:8000/prices/RELIANCE` — historical OHLCV from the DB
-- `http://127.0.0.1:8000/portfolio` — paper trading state
-
----
-
-## 7. Open the dashboard
-
-With the API server still running, double-click **`open_dashboard.bat`**
-(or just double-click `dashboard.html`).
-
-The dashboard shows:
-- A live scrolling **ticker tape** of all 10 stocks
-- **Stats bar** — buy signal count, stocks scanned, paper capital, total trades
-- **Buy Signals panel** — high-confidence (≥58%) picks with RSI/MACD/Volume
-- **All Signals table** — every stock ranked by confidence (click a row
-  to load its 60-day price chart on the right)
-- **Sectors panel** — which sectors currently have active BUY signals
-- Auto-refreshes every 5 minutes, or click **REFRESH** any time
-
-If you see a red banner saying it can't reach the API, make sure
-`start_api.bat` is still running, then click REFRESH.
-
----
-
-## 8. Optional — Telegram alerts
-
-Get BUY signals pushed to your phone automatically.
-
-1. In Telegram, message **@BotFather** → send `/newbot` → follow the
-   prompts → copy the **bot token** it gives you.
-2. Message **@userinfobot** → send `/start` → copy your numeric **Chat ID**.
-3. Open `src/alerts.py` and replace:
-   ```python
-   BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
-   CHAT_ID   = "YOUR_CHAT_ID_HERE"
+1. Once your first deploy finishes, go to your service in the Render dashboard → **Shell** tab.
+2. Run, in order:
+   ```bash
+   python pipeline.py
+   python train_all_models.py
+   python train_xgboost_all.py
+   python seed_trades.py
+   python create_admin.py
    ```
-   with your real values.
-4. Open `paper_trade.py` and set:
-   ```python
-   ENABLE_TELEGRAM_ALERTS = True
+
+> **Know this limitation before you rely on it:** the persistent disk in `render.yaml` only covers `data/` (your SQLite database). `models/` — your trained `.pkl` files — is **not** on the persistent disk, because Render only supports one disk mount per service, and `data/` and `models/` are separate top-level folders. In practice this means: your database survives redeploys, but **your trained models get wiped on every redeploy**, and you'll need to re-run the `train_*.py` commands above again each time you push a change and Render redeploys. For occasional updates this is a minor annoyance (a few minutes' wait); if you're deploying frequently, consider restructuring so `models/` lives under `data/models/` instead (would need updating `MODELS_DIR` in `src/ensemble_model.py`, `src/lstm_model.py`, `src/model.py`, `src/tft_model.py`, `src/transformer_model.py`, and `src/xgboost_model.py`) so one disk mount covers both — happy to do that for you if you want it.
+
+### Step 4 — Open your link
+
+That's it — visit your Render URL (e.g. `https://quantai-api.onrender.com`) and the dashboard loads directly. The frontend auto-detects it's being served from the same origin as the API and routes all requests there automatically — nothing to configure.
+
+Want a nicer link? Rename the service (Render dashboard → Settings) to get a custom subdomain like `https://quantai.onrender.com`.
+
+### Step 5 — Verify
+
+`https://<your-url>/api/status` should return a clean JSON response (this moved from `/` so the dashboard could live there instead). Then sign in on the dashboard with the admin account you created in Step 3.
+
+<details>
+<summary>Prefer two separate services instead? (optional, not necessary)</summary>
+
+If you'd rather keep the dashboard and API as separate Render services (e.g. to scale or update them independently), you still can:
+1. Deploy the API as above.
+2. Deploy a second **Static Site** pointed at the `dashboard/` folder.
+3. Set `window.QUANTAI_API_BASE = "https://your-api-url.onrender.com"` in a small inline script before `api.js` loads on each dashboard page, since they'd no longer share an origin.
+
+This isn't necessary for most setups — the single-service approach above is simpler and is what `render.yaml` is configured for.
+</details>
+
+---
+
+## Setting up Telegram alerts (per-user)
+
+Any user can connect their own Telegram account from **Settings → Telegram Alerts → Add Telegram Bot** — no manual chat_id needed, just click and hit Start in Telegram. Here's the one-time setup to make that work:
+
+1. **Create a bot** — message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts. You'll get a bot token and a bot username (e.g. `@QuantAI_Alerts_Bot`).
+2. **Set environment variables**:
    ```
-5. Run `python paper_trade.py` — if there's a BUY signal, you'll get a
-   Telegram message.
+   TELEGRAM_BOT_TOKEN=<the token BotFather gave you>
+   TELEGRAM_BOT_USERNAME=<your bot's username, without the @>
+   ```
+   Add these to your local `.env`, and to Render's **Environment** tab if deployed.
+3. **Register the webhook** (only works against a public HTTPS URL — won't work on localhost):
+   ```bash
+   python setup_telegram_webhook.py https://your-deployed-url.onrender.com
+   ```
+   Run this once, after your app is deployed and those environment variables are set.
+4. Done — any user can now click **Add Telegram Bot** in Settings, hit Start in the Telegram chat that opens, and they'll start receiving alerts.
+
+> If you're migrating from an older version of this project, note that `alerts.py` used to have a real bot token and a single hardcoded `CHAT_ID` directly in the source file. If that file was ever pushed to a public repo, **revoke that token via @BotFather immediately** and generate a fresh one — the token in this version comes only from `TELEGRAM_BOT_TOKEN`, never committed to source control.
 
 ---
 
-## 9. Optional — Back up to GitHub
+## Environment variables
 
-```bat
-git init
-git add .
-git commit -m "QuantAI v1.0 - Complete quant trading platform"
-```
+Copy `.env.example` to `.env` for local use, or set these directly in Render's **Environment** tab:
 
-Create a new empty repo at `github.com/new` named `QuantAI`, then:
-
-```bat
-git remote add origin https://github.com/YOUR_USERNAME/QuantAI.git
-git push -u origin main
-```
-
-(`venv/`, the database, models, and trade logs are excluded via
-`.gitignore` so the repo stays small — they get regenerated by the
-scripts above.)
-
-If `git` isn't recognized, install **Git for Windows** from
-[git-scm.com](https://git-scm.com/download/win) first.
-
----
-
-## 10. Optional — Daily automation (Windows Task Scheduler)
-
-`crontab` doesn't exist on Windows — instead we use **Task Scheduler**
-with `run_paper_trade.bat` (already included).
-
-1. Open `run_paper_trade.bat` in a text editor and confirm the folder
-   path is correct — `cd /d "%~dp0"` automatically uses the folder the
-   `.bat` file lives in, so usually **no edits are needed**.
-2. Press the **Start menu**, search for **Task Scheduler**, open it.
-3. Click **Create Basic Task** (right panel).
-4. Name it `QuantAI Paper Trade` → Next.
-5. Trigger: **Weekly** → select Mon, Tue, Wed, Thu, Fri → Next.
-6. Time: **4:00 PM** (or whenever you prefer, after market close) → Next.
-7. Action: **Start a program** → Browse to your
-   `...\QuantAI\run_paper_trade.bat` → Next → Finish.
-
-You can right-click the task → **Run** any time to test it. Output is
-appended to `data\log.txt`.
-
-> **PowerShell alternative** (run as Administrator):
-> ```powershell
-> schtasks /create /tn "QuantAI Paper Trade" /tr "C:\Users\<You>\QuantAI\run_paper_trade.bat" /sc weekly /d MON,TUE,WED,THU,FRI /st 16:00
-> ```
+| Variable | Purpose | Required? |
+|---|---|---|
+| `QUANTAI_SECRET` | Session/token secret | Auto-generated by Render, not currently required for anything else |
+| `TELEGRAM_BOT_TOKEN` | Your Telegram bot's token (from @BotFather) | Needed for Telegram alerts |
+| `TELEGRAM_BOT_USERNAME` | Your bot's @username, without the @ | Needed for the "Add Telegram Bot" connect link |
 
 ---
 
 ## Troubleshooting
 
-**`'python' is not recognized...`**
-Python isn't on your PATH. Reinstall Python and tick "Add Python to PATH",
-or use the **py** launcher (`py -m venv venv`).
-
-**`ModuleNotFoundError: No module named 'yfinance'` (or any package)**
-Your virtual environment isn't activated. Run `venv\Scripts\activate`
-(you should see `(venv)` at the start of the line), then re-run
-`pip install -r requirements.txt`.
-
-**Dashboard shows a red "Can't reach the QuantAI API" banner**
-`start_api.bat` isn't running, or was closed. Re-launch it and click
-REFRESH on the dashboard.
-
-**`pip install pandas-ta` fails / numba errors**
-This project intentionally uses the `ta` library instead of `pandas-ta`
-(already set in `requirements.txt`) — no action needed.
-
-**Charts (matplotlib) don't pop up**
-Make sure you're running scripts directly (`python day1_chart.py`, etc.)
-in a normal terminal — chart windows won't appear if run through some
-restricted/remote environments.
-
-**yfinance returns empty data**
-NSE markets may be closed (weekends/holidays), or Yahoo Finance is
-rate-limiting — wait a few minutes and try again.
+- **"Can't reach the QuantAI API"** → the backend isn't running. If you're opening a dashboard HTML file directly by double-click (`file://`) instead of through the server, it falls back to expecting the API at `http://127.0.0.1:8000` — start it locally, or set `window.QUANTAI_API_BASE` to your deployed URL before `api.js` loads.
+- **Model breakdown shows "not trained"** → you haven't run that model's training script yet (see Quick Start above); this is cosmetic, not an error.
+- **Options chain shows a "🧮 Theoretical" badge** → expected. NSE options aren't available through our data provider (yfinance), so the chain is modeled via Black-Scholes off real spot price + real historical volatility instead. Open Interest/Volume/PCR/Max Pain are intentionally left blank rather than faked.
+- Check the actual terminal/Shell output for tracebacks when something 500s — that's almost always more informative than the browser's error message.
 
 ---
 
-## What you have
+## License
 
-| Component | File(s) |
-|---|---|
-| Local NSE data pipeline (10 stocks) | `pipeline.py`, `src/database.py`, `src/data_collector.py` |
-| 30+ technical indicator feature engine | `src/features.py` |
-| Random Forest ML models (per stock) | `src/model.py`, `train_all_models.py` |
-| Backtesting engine | `src/backtest.py`, `run_backtest.py` |
-| Risk management system | `src/risk.py`, `test_risk.py` |
-| Live paper trading scanner | `src/paper_trader.py`, `paper_trade.py` |
-| FastAPI REST backend | `src/api.py` |
-| Live dashboard | `dashboard.html` |
-| Telegram alerts (optional) | `src/alerts.py` |
-
-Enjoy — and remember this is a **paper trading / educational** system,
-not financial advice. 🚀
+Add your preferred license here (MIT, etc.) before making the repo public, if you haven't already.

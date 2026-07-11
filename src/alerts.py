@@ -1,44 +1,72 @@
 """
 src/alerts.py — QuantAI Telegram alerts (enhanced)
 Supports: signal alerts, morning briefing, evening summary, weekly report.
+Sends to every user who has connected their own Telegram account (see
+/telegram/connect-link in src/api.py), not just a single hardcoded chat.
 """
 
 from datetime import datetime, date
+import os
 import requests# type: ignore
 
-# ── Fill these in after creating a bot with @BotFather ────
-BOT_TOKEN = "8523402106:AAHki_TYbMrGUyVPsSkFL-UiB4MmhhviVVA"   # from BotFather
-CHAT_ID   = "1687312192"     # your Telegram user ID
+# ── Bot token from environment, never hardcoded ────────────
+# This used to have a real token and chat_id hardcoded directly in this
+# file, which is a serious problem the moment this repo is pushed to
+# GitHub — anyone who sees it can send messages as your bot or read your
+# alerts. If you're migrating from an older version of this file that had
+# a token here, revoke it via @BotFather ("Revoke current token") and
+# generate a fresh one, then put ONLY the new one in your .env file as
+# TELEGRAM_BOT_TOKEN — never commit it to source control.
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 # ── Internal check ────────────────────────────────────────
 
 def _configured() -> bool:
-    return bool(BOT_TOKEN and CHAT_ID)
+    return bool(BOT_TOKEN)
 
 
-def _send(message: str) -> bool:
-    """Sends message via requests — no telegram library needed."""
+def _send_to(chat_id: str, message: str) -> bool:
+    """Sends a message to one specific chat_id."""
+    if not BOT_TOKEN or not chat_id:
+        return False
     try:
         url      = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         response = requests.post(url, json={
-            "chat_id"                  : CHAT_ID,
+            "chat_id"                  : chat_id,
             "text"                     : message,
             "parse_mode"               : "Markdown",
             "disable_web_page_preview" : True
         }, timeout=10)
         return response.status_code == 200
     except Exception as e:
-        print(f"  ⚠️  Telegram send failed: {e}")
+        print(f"  ⚠️  Telegram send to {chat_id} failed: {e}")
         return False
 
-def _run(message: str):
+
+def _broadcast(message: str):
+    """Sends a message to every user who has connected their Telegram account."""
     if not _configured():
         return
-    _send(message)
+    try:
+        from src.user_db import get_all_telegram_chat_ids
+        chat_ids = get_all_telegram_chat_ids()
+    except Exception as e:
+        print(f"  ⚠️  Could not load connected Telegram users: {e}")
+        return
+    for chat_id in chat_ids:
+        _send_to(chat_id, message)
+
+
+def _run(message: str):
+    """Back-compat name used throughout this file — now broadcasts to all
+    connected users instead of a single hardcoded chat_id."""
+    _broadcast(message)
 
 def send_message(text: str) -> bool:
-    """Public wrapper — used by pairs_trade.py and other modules."""
-    return _send(text)
+    """Public wrapper — broadcasts to all connected users. Used by
+    pairs_trade.py and other modules that just want to send one message."""
+    _broadcast(text)
+    return True
 
 # ── Alert types ───────────────────────────────────────────
 

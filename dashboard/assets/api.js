@@ -142,6 +142,11 @@ const QuantAPI = (() => {
     // backend's /fii-dii and /fii-dii/refresh routes.
     fiiDii:           (days = 8) => req("/fii-dii", { params: { days } }),
     fiiDiiRefresh:    () => req("/fii-dii/refresh", { method: "POST" }),
+
+    // Telegram bot connection
+    telegramConnectLink: () => req("/telegram/connect-link", { method: "POST" }),
+    telegramStatus:      () => req("/telegram/status"),
+    telegramDisconnect:  () => req("/telegram/disconnect", { method: "POST" }),
   };
 })();
 

@@ -22,6 +22,13 @@ def create_user_tables():
             created_at    TEXT    DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # NOTE: this create_user_tables() function (and create_user/get_user_by_*
+    # below) is legacy/unused — the live app actually creates and manages the
+    # real `users` table via src/database.py's create_tables() and reads/
+    # writes it via src/auth.py, which is what src/api.py's registration and
+    # login endpoints actually call. The real schema has different columns
+    # (is_admin + salt, no role) than what's defined here. Telegram-linking
+    # schema changes therefore live in database.py, not here — see that file.
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_portfolios (
@@ -189,3 +196,74 @@ def get_user_trades(user_id: int, limit: int = 20):
              "stop_loss": r[4], "trade_value": r[5], "model_type": r[6],
              "date": r[7], "status": r[8], "pnl": r[9]}
             for r in rows]
+
+
+# ── Telegram bot linking ──────────────────────────────────
+def create_telegram_link_token(user_id: int) -> str:
+    """
+    Creates a one-time token for this user and returns it. The token gets
+    embedded in a Telegram deep link (t.me/<bot>?start=<token>); when the
+    user hits Start in Telegram, our webhook receives it back and uses it
+    to know which QuantAI account to attach their chat_id to.
+    Old unused tokens for this user are cleared first so they don't pile up.
+    """
+    import secrets
+    conn   = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM telegram_link_tokens WHERE user_id=?", (user_id,))
+    token = secrets.token_urlsafe(16)
+    cursor.execute(
+        "INSERT INTO telegram_link_tokens (token, user_id) VALUES (?,?)",
+        (token, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return token
+
+
+def resolve_telegram_link_token(token: str):
+    """Returns the user_id for a link token, or None if invalid/unknown."""
+    conn   = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM telegram_link_tokens WHERE token=?", (token,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def set_telegram_chat_id(user_id: int, chat_id: str):
+    """Attaches a Telegram chat_id to a user — they'll now receive alerts."""
+    conn = get_connection()
+    conn.execute("UPDATE users SET telegram_chat_id=? WHERE id=?", (str(chat_id), user_id))
+    # Token is single-use — consume it so the same link can't be reused
+    conn.execute("DELETE FROM telegram_link_tokens WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_telegram_chat_id(user_id: int):
+    """Returns the connected chat_id for a user, or None if not connected."""
+    conn   = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT telegram_chat_id FROM users WHERE id=?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else None
+
+
+def disconnect_telegram(user_id: int):
+    """Removes a user's Telegram connection."""
+    conn = get_connection()
+    conn.execute("UPDATE users SET telegram_chat_id=NULL WHERE id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_all_telegram_chat_ids() -> list:
+    """Returns every connected user's chat_id — used for broadcast alerts."""
+    conn   = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT telegram_chat_id FROM users WHERE telegram_chat_id IS NOT NULL")
+    rows = cursor.fetchall()
+    conn.close()
+    return [r[0] for r in rows]

@@ -207,6 +207,13 @@ function _injectSettingsPanel(){
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Telegram Alerts</div>
+        <div class="s-sub" style="margin-bottom:10px">Get signal alerts, risk warnings, and daily summaries sent to you directly on Telegram.</div>
+        <div id="telegram-status" style="margin-bottom:10px"></div>
+        <button class="btn btn-block" id="telegram-connect-btn" onclick="connectTelegram()">Add Telegram Bot</button>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Account</div>
         <button class="btn btn-block" onclick="location.href='login.html'" style="margin-bottom:8px">Switch account</button>
         <button class="btn btn-block btn-danger" onclick="logoutAndRedirect()">Sign out</button>
@@ -226,6 +233,64 @@ function _injectSettingsPanel(){
 
   // Load saved preferences
   _applyStoredSettings();
+  refreshTelegramStatus();
+}
+
+async function refreshTelegramStatus(){
+  const statusEl = document.getElementById("telegram-status");
+  const btnEl    = document.getElementById("telegram-connect-btn");
+  if(!statusEl || !btnEl) return;
+  try{
+    const d = await QuantAPI.telegramStatus();
+    if(d.connected){
+      statusEl.innerHTML = `<span class="badge badge-buy">✅ Connected</span>`;
+      btnEl.textContent = "Disconnect";
+      btnEl.onclick = disconnectTelegram;
+      btnEl.classList.add("btn-danger");
+    } else {
+      statusEl.innerHTML = `<span class="badge badge-skip">Not connected</span>`;
+      btnEl.textContent = "Add Telegram Bot";
+      btnEl.onclick = connectTelegram;
+      btnEl.classList.remove("btn-danger");
+    }
+  }catch(e){
+    statusEl.innerHTML = `<span class="dim" style="font-size:11px">Couldn't check status</span>`;
+  }
+}
+
+async function connectTelegram(){
+  const btn = document.getElementById("telegram-connect-btn");
+  const originalText = btn.textContent;
+  btn.textContent = "Opening Telegram…";
+  btn.disabled = true;
+  try{
+    const d = await QuantAPI.telegramConnectLink();
+    window.open(d.deep_link, "_blank");
+    toast("Hit Start in Telegram to finish connecting — this panel will update once you do.");
+    // Poll a few times in case the user completes it while the panel is still open
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      await refreshTelegramStatus();
+      const stillDisconnected = document.getElementById("telegram-connect-btn")?.textContent === "Add Telegram Bot";
+      if(!stillDisconnected || attempts >= 10) clearInterval(poll);
+    }, 3000);
+  }catch(e){
+    toast(e.message || "Couldn't generate a Telegram link", "err");
+  }finally{
+    btn.disabled = false;
+    if(btn.textContent === "Opening Telegram…") btn.textContent = originalText;
+  }
+}
+
+async function disconnectTelegram(){
+  try{
+    await QuantAPI.telegramDisconnect();
+    toast("Telegram disconnected");
+    refreshTelegramStatus();
+  }catch(e){
+    toast(e.message || "Couldn't disconnect", "err");
+  }
 }
 
 function _injectToastStack(){

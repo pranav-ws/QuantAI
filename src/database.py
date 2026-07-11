@@ -55,6 +55,26 @@ def create_tables():
         )
     ''')
 
+    # Idempotent column add for Telegram bot linking — ALTER TABLE ADD
+    # COLUMN fails if the column already exists, so this is wrapped so
+    # re-running create_tables() (happens on every server startup) never
+    # crashes on the second+ run.
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT")
+    except sqlite3.OperationalError:
+        pass   # column already exists
+
+    # Short-lived tokens for the Telegram "Add Telegram Bot" connect flow —
+    # see /telegram/connect-link and /telegram/webhook in src/api.py.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+            token      TEXT PRIMARY KEY,
+            user_id    INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+
     # Table 4: Login sessions (token-based auth, no external libs)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sessions (

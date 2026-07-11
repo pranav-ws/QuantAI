@@ -488,7 +488,7 @@ def calendar_spread(
 def suggest_strategy(
     signal     : str,        # 'BUY' | 'SELL' | 'HOLD'
     confidence : float,      # 0–1 from ensemble model
-    iv_rank    : float,      # 0–100 (IV Rank)
+    iv_rank    : Optional[float],  # 0–100 (IV Rank), or None if unavailable
     spot       : float,
     T          : float,
     sigma      : float,
@@ -501,7 +501,13 @@ def suggest_strategy(
     Integrates with the existing signals by reading:
         signal       = ensemble prediction ('BUY'/'SELL'/'HOLD')
         confidence   = ensemble confidence score (from get_ensemble_confidence)
-        iv_rank      = IV Rank 0-100 (from options_chain.fetch_full_chain)
+        iv_rank      = IV Rank 0-100 (from options_chain.fetch_full_chain) —
+                       this is None whenever the chain is theoretical (no
+                       real options-chain data available for the ticker),
+                       since IV Rank needs real historical option IVs we
+                       don't have in that mode. Treated as neutral (50)
+                       below rather than crashing every strategy suggestion
+                       for any ticker without a live chain.
 
     The decision matrix balances direction (from ML signal) with
     volatility regime (from IV Rank) to select the optimal strategy.
@@ -511,6 +517,9 @@ def suggest_strategy(
     Returns (StrategyResult, rationale_string) or (None, reason).
     """
     MIN_CONFIDENCE = 0.58
+
+    if iv_rank is None:
+        iv_rank = 50.0   # neutral — genuinely unknown, not fabricated as precise
 
     if confidence < MIN_CONFIDENCE:
         return None, (
