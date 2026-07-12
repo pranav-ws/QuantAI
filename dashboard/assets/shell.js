@@ -240,6 +240,21 @@ async function refreshTelegramStatus(){
   const statusEl = document.getElementById("telegram-status");
   const btnEl    = document.getElementById("telegram-connect-btn");
   if(!statusEl || !btnEl) return;
+
+  // /telegram/status requires a logged-in account (the connection is tied
+  // to a user, not a browser). Checking it unconditionally on every page
+  // load meant every guest/logged-out visitor produced a 401 in the server
+  // log on every single page — harmless, but noisy and looked like a real
+  // error. Skip the call entirely when there's no session token.
+  if (!QuantAPI.getToken()) {
+    statusEl.innerHTML = `<span class="dim" style="font-size:11px">Sign in to connect Telegram</span>`;
+    btnEl.textContent = "Sign in first";
+    btnEl.disabled = true;
+    btnEl.onclick = () => location.href = "login.html";
+    return;
+  }
+  btnEl.disabled = false;
+
   try{
     const d = await QuantAPI.telegramStatus();
     if(d.connected){
@@ -260,14 +275,32 @@ async function refreshTelegramStatus(){
 
 async function connectTelegram(){
   const btn = document.getElementById("telegram-connect-btn");
+  const statusEl = document.getElementById("telegram-status");
   const originalText = btn.textContent;
   btn.textContent = "Opening Telegram…";
   btn.disabled = true;
+
+  // Open the tab SYNCHRONOUSLY, before any await — a window.open() called
+  // after an await is no longer considered a direct result of the click by
+  // most browsers, so popup blockers silently swallow it. This was almost
+  // certainly why nothing visibly happened before: the tab was being
+  // blocked with no obvious indication. Opening a blank tab immediately
+  // and redirecting it once we have the real link avoids that entirely.
+  const popup = window.open("about:blank", "_blank");
+
   try{
     const d = await QuantAPI.telegramConnectLink();
-    window.open(d.deep_link, "_blank");
+    if (popup && !popup.closed) {
+      popup.location.href = d.deep_link;
+    } else {
+      // Popup blocked even with the synchronous open — fall back to a
+      // visible, clickable link so the user isn't stuck with no path
+      // forward regardless of their browser's popup settings.
+      statusEl.innerHTML = `<div class="s-sub" style="color:var(--warn,#e0a030)">
+        Your browser blocked the popup. <a href="${d.deep_link}" target="_blank" style="color:var(--accent)">Click here to open Telegram</a> instead.
+      </div>`;
+    }
     toast("Hit Start in Telegram to finish connecting — this panel will update once you do.");
-    // Poll a few times in case the user completes it while the panel is still open
     let attempts = 0;
     const poll = setInterval(async () => {
       attempts++;
@@ -276,7 +309,15 @@ async function connectTelegram(){
       if(!stillDisconnected || attempts >= 10) clearInterval(poll);
     }, 3000);
   }catch(e){
-    toast(e.message || "Couldn't generate a Telegram link", "err");
+    if (popup && !popup.closed) popup.close();
+    const msg = e.message || "Couldn't generate a Telegram link";
+    toast(msg, "err");
+    // Also show it inline, not just as a toast — toasts are easy to miss
+    // and this is exactly the kind of error (e.g. a missing server-side
+    // TELEGRAM_BOT_USERNAME) worth being impossible to overlook.
+    if (statusEl) {
+      statusEl.innerHTML = `<div class="s-sub" style="color:var(--danger,#e05050)">⚠️ ${msg}</div>`;
+    }
   }finally{
     btn.disabled = false;
     if(btn.textContent === "Opening Telegram…") btn.textContent = originalText;
@@ -324,19 +365,35 @@ function _applyStoredSettings(){
   setTheme(dark ? "dark" : "light");
 
   const fsel = document.getElementById("s-font-size");
-  if(fsel){ fsel.value = fs; document.documentElement.style.fontSize = fs+"px"; }
+  if(fsel){ fsel.value = fs; }
+  _applyFontZoom(fs);
 
   const dsel = document.getElementById("s-density");
-  if(dsel){ dsel.value = dens; document.documentElement.dataset.density = dens; }
+  if(dsel){ dsel.value = dens; }
+  document.documentElement.setAttribute("data-density", dens);
 
   const rtog = document.getElementById("s-refresh");
   if(rtog) rtog.value = _get("refresh","300000");
 
   const mdtog = document.getElementById("s-model-detail");
   if(mdtog) mdtog.checked = mdl;
+  document.documentElement.setAttribute("data-hide-model", mdl ? "0" : "1");
 
   const regtog = document.getElementById("s-regime-badge");
   if(regtog) regtog.checked = reg;
+  document.documentElement.setAttribute("data-hide-regime", reg ? "0" : "1");
+}
+
+// Font size previously set document.documentElement.style.fontSize directly,
+// which does nothing visible on this site: the CSS throughout every
+// dashboard page uses fixed px font sizes, not rem, so changing the root
+// element's font-size has nothing to cascade into. CSS zoom scales the
+// whole rendered page proportionally regardless of what units the
+// underlying CSS uses, so it actually works.
+const _FONT_ZOOM = { "13": 0.93, "14": 1.0, "15": 1.08, "16": 1.16 };
+function _applyFontZoom(v){
+  const zoom = _FONT_ZOOM[v] ?? 1.0;
+  document.documentElement.style.zoom = zoom;
 }
 
 function settingDarkMode(dark){
@@ -345,17 +402,23 @@ function settingDarkMode(dark){
 }
 function settingFontSize(v){
   _set("font", v);
-  document.documentElement.style.fontSize = v+"px";
+  _applyFontZoom(v);
   toast("Font size updated");
 }
 function settingDensity(v){
   _set("density", v);
-  document.documentElement.dataset.density = v;
+  document.documentElement.setAttribute("data-density", v);
   toast("Density updated");
 }
-function settingRefresh(v){ _set("refresh", v); }
-function settingModelDetail(v){ _set("model_detail", v?"1":"0"); }
-function settingRegimeBadge(v){ _set("regime_badge", v?"1":"0"); }
+function settingRefresh(v){ _set("refresh", v); _restartSignalsAutoRefresh(); }
+function settingModelDetail(v){
+  _set("model_detail", v?"1":"0");
+  document.documentElement.setAttribute("data-hide-model", v ? "0" : "1");
+}
+function settingRegimeBadge(v){
+  _set("regime_badge", v?"1":"0");
+  document.documentElement.setAttribute("data-hide-regime", v ? "0" : "1");
+}
 function settingSound(v){ _set("sound", v?"1":"0"); if(v) toast("Sound alerts on"); }
 function settingDesktopNotif(v){
   _set("notif", v?"1":"0");
@@ -364,6 +427,72 @@ function settingDesktopNotif(v){
       if(p!=="granted"){ _set("notif","0"); document.getElementById("s-notif").checked=false; }
     });
   }
+}
+
+// ── Signals page: BUY-signal sound + desktop notification + auto-refresh ──
+// These three settings ("Sound on BUY signal", "Desktop notifications",
+// "Auto-refresh — Signals page only") previously only wrote to storage —
+// nothing anywhere ever read them, so toggling them did nothing at all.
+// Real implementations live here so any page can opt in by calling
+// initSignalAlerts(signalsArray) after it loads/refreshes signals, and
+// startSignalsAutoRefresh(reloadFn) if it wants the auto-refresh timer.
+
+let _prevBuyTickers = null;   // null = first load this page visit, don't alert
+let _refreshTimer   = null;
+let _refreshReloadFn = null;
+
+function checkNewBuySignals(signals){
+  if (!Array.isArray(signals)) return;
+  const buyTickers = new Set(signals.filter(s => s.signal === "BUY").map(s => s.ticker));
+
+  if (_prevBuyTickers === null) {
+    // First load this page visit — record baseline, don't alert on
+    // signals that were already BUY before we ever looked.
+    _prevBuyTickers = buyTickers;
+    return;
+  }
+
+  const newlyBuy = [...buyTickers].filter(t => !_prevBuyTickers.has(t));
+  _prevBuyTickers = buyTickers;
+  if (newlyBuy.length === 0) return;
+
+  if (_get("sound","0") === "1") {
+    _playBeep();
+  }
+  if (_get("notif","0") === "1" && typeof Notification !== "undefined" && Notification.permission === "granted") {
+    const title = newlyBuy.length === 1 ? `${newlyBuy[0]} — BUY signal` : `${newlyBuy.length} new BUY signals`;
+    const body  = newlyBuy.length === 1 ? "Confidence crossed into BUY territory." : newlyBuy.join(", ");
+    try { new Notification(title, { body, icon: "favicon.ico" }); } catch {}
+  }
+}
+
+function _playBeep(){
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch {}
+}
+
+/** Call once after a page's own load()/reload function is defined, passing
+ *  that function, to enable the "Auto-refresh — Signals page only" setting. */
+function startSignalsAutoRefresh(reloadFn){
+  _refreshReloadFn = reloadFn;
+  _restartSignalsAutoRefresh();
+}
+function _restartSignalsAutoRefresh(){
+  if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+  if (!_refreshReloadFn) return;
+  const ms = parseInt(_get("refresh","300000"), 10);
+  if (!ms || ms <= 0) return;   // "Off"
+  _refreshTimer = setInterval(() => _refreshReloadFn(), ms);
 }
 function logoutAndRedirect(){ QuantAPI.clearSession(); location.href="login.html"; }
 

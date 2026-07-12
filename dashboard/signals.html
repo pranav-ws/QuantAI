@@ -150,7 +150,7 @@ function renderTable(){
         <td><span class="badge ${isBuy?"badge-buy":"badge-skip"}">${isBuy?"● BUY":"○ SKIP"}</span></td>
         <td><div class="conf-bar-wrap"><span class="num">${conf}%${thrNote}</span><div class="conf-bar"><div class="conf-fill" style="width:${conf}%"></div></div></div></td>
         <td class="num" style="color:${rsiColor}">${rsi.toFixed(1)}</td>
-        <td><span class="${regCls}" style="font-size:12px;font-weight:600">${regIcon} ${s.regime||"—"}</span></td>
+        <td><span class="js-regime-badge ${regCls}" style="font-size:12px;font-weight:600">${regIcon} ${s.regime||"—"}</span></td>
         <td class="muted" style="font-size:11px">${s.model_type||""}</td>
         <td><button class="btn ${saved?'btn-primary':''}" style="padding:4px 10px" onclick="event.stopPropagation();toggleWatch('${s.ticker}',this)">${saved?"★":"☆"}</button></td>
       </tr>`;
@@ -174,6 +174,7 @@ async function load(force=false){
   try{
     const data = await SignalsCache.get(force);
     SIGNALS = data.results || [];
+    checkNewBuySignals(SIGNALS);
     await loadWatchlistSet();
     populateSectorFilter();
     renderTape(SIGNALS);
@@ -187,6 +188,7 @@ async function load(force=false){
 
 document.getElementById("btn-refresh").onclick = () => load(true);
 load();
+startSignalsAutoRefresh(() => load(true));
 </script>
 </body>
 </html>

@@ -139,7 +139,7 @@ function pickCard(s){
     <button class="wl-star ${saved?'on':''}" onclick="event.stopPropagation();toggleWatch('${s.ticker}',this)" title="Watchlist">${saved?'★':'☆'}</button>
     <div class="sig-card-top">
       <span class="sig-card-ticker">${tickerShort(s.ticker)}</span>
-      <span class="sig-card-regime ${regCls}">${regIcon} ${s.regime||''}</span>
+      <span class="sig-card-regime js-regime-badge ${regCls}">${regIcon} ${s.regime||''}</span>
     </div>
     <div class="sig-card-top" style="margin-bottom:4px">
       <span class="sig-card-sector">${s.sector||''} · ${(s.name||'').slice(0,22)}</span>

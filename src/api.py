@@ -5,6 +5,33 @@ New in v4: Multi-user auth, watchlist, per-user portfolio, admin panel, schedule
 import os, time, math
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# Load .env into the real process environment. Nothing in this project did
+# this before — writing values into .env did NOTHING on its own, since
+# Python doesn't auto-read that file; it just sat there inert while every
+# os.environ.get(...) call (TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME,
+# QUANTAI_SECRET, etc.) kept returning the empty-string default. This must
+# run before any other project module is imported, since several of them
+# read environment variables at import time, not lazily.
+#
+# Small built-in parser instead of requiring python-dotenv — this way it
+# works immediately for anyone updating this file, with no dependency to
+# reinstall and no risk of the app failing to start over a missing package.
+def _load_env_file():
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if key and key not in os.environ:   # real env vars always win
+                os.environ[key] = value
+
+_load_env_file()
+
 from fastapi import FastAPI, HTTPException, Header, Depends, Request# type: ignore
 from fastapi.middleware.cors import CORSMiddleware# type: ignore
 from fastapi.staticfiles import StaticFiles# type: ignore

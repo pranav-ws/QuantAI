@@ -444,3 +444,24 @@ canvas.candle-canvas { display:block; width:100%; touch-action:none; }
   .grid-2,.grid-3 { grid-template-columns:1fr; }
   #settings-panel { width:100%; max-width:340px; }
 }
+
+/* ============================================================
+   Settings panel — Density, Show model details, Show regime badges
+   These previously stored a preference but nothing ever read it.
+   Real CSS rules below, driven by attributes shell.js now sets on
+   <html> in _applyStoredSettings() and every setting*() handler.
+   ============================================================ */
+html[data-density="compact"] .card-body      { padding-top:8px; padding-bottom:8px; }
+html[data-density="compact"] .card-head      { padding-top:8px; padding-bottom:8px; }
+html[data-density="compact"] .settings-row   { padding-top:6px; padding-bottom:6px; }
+html[data-density="compact"] table td,
+html[data-density="compact"] table th        { padding-top:5px; padding-bottom:5px; }
+
+html[data-density="comfortable"] .card-body    { padding-top:22px; padding-bottom:22px; }
+html[data-density="comfortable"] .card-head    { padding-top:19px; padding-bottom:19px; }
+html[data-density="comfortable"] .settings-row { padding-top:14px; padding-bottom:14px; }
+html[data-density="comfortable"] table td,
+html[data-density="comfortable"] table th      { padding-top:12px; padding-bottom:12px; }
+
+html[data-hide-model="1"] .js-model-detail-card { display:none !important; }
+html[data-hide-regime="1"] .js-regime-badge     { display:none !important; }
