@@ -393,7 +393,11 @@ function _applyStoredSettings(){
 const _FONT_ZOOM = { "13": 0.93, "14": 1.0, "15": 1.08, "16": 1.16 };
 function _applyFontZoom(v){
   const zoom = _FONT_ZOOM[v] ?? 1.0;
-  document.documentElement.style.zoom = zoom;
+  // Explicit String() conversion — being defensive here rather than relying
+  // on implicit coercion, since zoom is a legacy/non-standard-turned-
+  // standardized property and coercion behavior has historically been
+  // inconsistent across engines for it specifically.
+  document.documentElement.style.zoom = String(zoom);
 }
 
 function settingDarkMode(dark){
@@ -403,12 +407,13 @@ function settingDarkMode(dark){
 function settingFontSize(v){
   _set("font", v);
   _applyFontZoom(v);
-  toast("Font size updated");
+  const pct = Math.round((_FONT_ZOOM[v] ?? 1.0) * 100);
+  toast(`Font size set to ${v}px (page zoom ${pct}%)`);
 }
 function settingDensity(v){
   _set("density", v);
   document.documentElement.setAttribute("data-density", v);
-  toast("Density updated");
+  toast(`Density set to "${v}" — check card padding on this page`);
 }
 function settingRefresh(v){ _set("refresh", v); _restartSignalsAutoRefresh(); }
 function settingModelDetail(v){
