@@ -42,7 +42,6 @@ STOCK_UNIVERSE = {
     'BAJAJ-AUTO.NS': ('Bajaj Auto',                'Automobile'),
     'HEROMOTOCO.NS': ('Hero MotoCorp',             'Automobile'),
     'MARUTI.NS'    : ('Maruti Suzuki',             'Automobile'),
-    'TATAMOTORS.BO': ('Tata Motors',               'Automobile'),
     'EICHERMOT.NS' : ('Eicher Motors',             'Automobile'),
     'M&M.NS'       : ('Mahindra & Mahindra',       'Automobile'),
 
