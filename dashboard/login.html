@@ -105,7 +105,7 @@ setTheme(getTheme());
   const dot  = document.getElementById("api-dot");
   const text = document.getElementById("api-status-text");
   try{
-    const r = await fetch(QuantAPI.BASE + "/", { signal: AbortSignal.timeout(4000) });
+    const r = await fetch(QuantAPI.BASE + "/api/status", { signal: AbortSignal.timeout(4000) });
     if(r.ok){
       dot.classList.add("online");
       const d = await r.json();
